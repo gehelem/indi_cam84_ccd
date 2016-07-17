@@ -1,0 +1,849 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <ftdi.h>
+#include <cstring>
+#include <stdint.h>
+#include <pthread.h>
+#include <time.h>
+#include <sys/time.h>
+#include "libcam84.h"
+#include "config.h"
+#include "indidevapi.h"
+#include "eventloop.h"
+#include "indiccd.h"
+#include "indicom.h"
+
+using namespace std;
+
+typedef uint8_t  Byte;
+//typedef uint16_t Word;
+typedef uint8_t Word;
+
+
+/*?????? ???????????*/
+const int CameraWidth = 3000;
+ /*?????? ???????????*/
+const int CameraHeight = 2000;
+/*?????????????? ???????? ?? ??????? ????? BDBUS*/
+const int portfirst = 0xe1+8;
+const int portsecond = 0x91+8;
+const int xccd = 1500;
+const int yccd = 1000;
+const int dx = 3044-2*xccd;
+const int dx2 = 1586-xccd;
+const int dy = 512-(yccd / 2);
+const int apolosa = 50;
+
+/*camera state consts*/
+const int cameraIdle = 0;
+const int cameraWaiting = 1;
+const int cameraExposing = 2;
+const int cameraReading = 3;
+const int cameraDownload = 4;
+const int cameraError = 5;
+
+
+/*Class for reading thread
+posl = class(TThread)
+private
+ Private declarations
+protected
+procedure Execute; override;
+end;*/
+
+int rfstatus =0;
+
+  int x;
+  struct ftdi_context *ftdi, *ftdi2;
+  int f,i;
+  unsigned char buf[1];
+//??????????-????, ?????????? ????????? ?????????? ? ???????
+  bool isConnected  = false;
+//??????????-????, ??????????, ????? ????? ?????????? ??????????
+ bool canStopExposureNow = true;
+//????????? ???????? ?????? ? ???????? ?????? FT2232HL
+ int adress;
+//???????,
+ int mBin;
+//??????????-????, ?????????? ?????????? ? ?????????? ?????
+ bool imageReady = false;
+//??????????-????????? ??????
+ int cameraState;
+//?????? ?????????? ? 15? ??????
+ int ExposureTimer, Timer15V;
+
+//?????? ??? ???????? ??????????-????? CanStopExposureCount
+ int stopExposureTimer;
+//?????????? ???????? ??????????-????? CanStopExposureCount
+ int checkCanStopExposureCount;
+//?????????? ??? ??????? ?????? (?????? ???????????)
+// thread co;//co: posl;
+//std::thread co;
+pthread_t co;
+void *posExecute(void *arg);
+
+//???????? ??????-??????????? ??? ????????
+//static unsigned int bufim[CameraWidth][CameraHeight];
+//?????? ?????? ? ?????????? ?? ???????
+int mYn,mdeltY;
+//?????? ?????? ? ?????????? ?? ????????
+int mXn,mdeltX;
+Byte zatv;
+//error Flag
+bool errorReadFlag;
+bool errorWriteFlag;
+//speed
+double spusb;
+double ms1;
+
+void AD9822(Byte adr , uint16_t val);
+void HC595(Byte va);
+Word FT_In_Buffer[6000];
+Byte FT_Out_Buffer[26000000];
+int  FT_Current_Baud;
+bool FT_OP_flag;
+
+void clearline2(void);
+void shift(void);
+void shift0(void);
+void shift2(void);
+void shift3(void);
+void clearframe(void);
+void readframe(int bin,int expoz);
+void coexecute(void);
+void ComRead(void);
+
+uint16_t swap(uint16_t x);
+
+
+/* ????????? ????????? ?????? ? FT2232LH.*/
+/*?????? ???????????? ????? ?????:*/
+/*1. ??????? ??????????? ????? ? ????????? ??????? (??????????? ?????????????????? ????????? ?? ??????? ????? BDBUS).*/
+/*??? ???? ???????????????? ????????? adress.*/
+/*2. ????? ???? ???? ?????? ?????????? ?? ????? ????????: n:=Write_USB_Device_Buffer(FT_CAM8B,adress);*/
+/*????????????? ?????????? FT2232HL ?????? ??? ???????? ??? ??? ???????? ?? ???? ???? BDBUS. ???????? 1 ????? ??? ???? ???????? 65 ??.*/
+/*????? ????????? ????????? ??????? n:=Write_USB_Device_Buffer(FT_CAM8B,adress) ??????? ?? ????????????? ??????????? ? ?? ??????????????*/
+/*????. ??????? ??????????? ?????????????????? ????????? ????? ????????? ???, ? ?? ?????????? ?? ???????.*/
+/*????? ?????????? ????? ???????? ??? ????????? (? ???? ????????? ?? 24 ?????!) ??? ????? ????? ???????? ????? D2XX.pas, ? ?????? ??? MyD2XX.pas*/
+
+/*?????????? ????????? ?????? ???????? ??? ???????? ? ?????????? ????? val ?? ?????? adr ? ?????????? AD9822.*/
+/*???????? ???? ? ???????????????? ????.*/
+void AD9822(Byte adr,uint16_t val)
+{
+//printf("AD9822\n");
+int kol = 64;
+Byte dan[kol];
+int i;
+//memset(array,fill_this_character,sizeof(array));
+memset(dan,portfirst,kol);
+    for (i = 1; i <= 32; i++)  { dan[i]=dan[i] & 0xFE;          };
+    for (i = 0; i <= 15; i++)  { dan[2*i+2]=dan[2*i+2] +2 ;      };
+    if ((adr && 4)==4)       { dan[3] =dan[3]+4;     dan[4] =dan[4]+4;  };       
+    if ((adr && 2)==2)       { dan[5] =dan[5]+4;     dan[6] =dan[6]+4;  };       
+    if ((adr && 1)==1)       { dan[7] =dan[7]+4;     dan[8] =dan[8]+4;  };       
+    if ((val && 256)==256)   { dan[15]=dan[15]+4;    dan[16]=dan[16]+4; };       
+    if ((val && 128)==128)   { dan[17]=dan[17]+4;    dan[18]=dan[18]+4; };       
+    if ((val &&  64)==64)    { dan[19]=dan[19]+4;    dan[20]=dan[20]+4; };       
+    if ((val &&  32)==32)    { dan[21]=dan[21]+4;    dan[22]=dan[22]+4; };       
+    if ((val &&  16)==16)    { dan[23]=dan[23]+4;    dan[24]=dan[24]+4; };       
+    if ((val &&   8)==8)     { dan[25]=dan[25]+4;    dan[26]=dan[26]+4; };       
+    if ((val &&   4)==4)     { dan[27]=dan[27]+4;    dan[28]=dan[28]+4; };       
+    if ((val &&   2)==2)     { dan[29]=dan[29]+4;    dan[30]=dan[30]+4; };       
+    if ((val &&   1)==1)     { dan[31]=dan[31]+4;    dan[32]=dan[32]+4; };       
+    if (ftdi_write_data(ftdi2, dan, kol) < 0)
+            //fprintf(stderr,"write failed on channel 2 for 0x%x, error %d (%s)\n", dan[0]          , f, ftdi_get_error_string(ftdi2))
+                    ;
+
+}
+
+/*?????????? ????????? ?????? ???????? ??? ???????? ????? val ?? ?????? ?????????? HC595.*/
+/*???????? ???? ? ???????????????? ????.*/
+void HC595(Byte va)
+{
+//fprintf(stdout,"HC595 %d \n",adress);
+int kol = 20;
+Byte dan[kol];
+int i;
+uint16_t val;
+
+memset(dan,portfirst,kol);
+ if (zatv == 1 ) val=va+0x0100; else val=va ;
+ for (i = 0; i <= 8; i++)  
+ { 
+	dan[2*i+1]=dan[2*i+1] +2 ;
+	if ((va && 0x100)==0x100)
+	{
+		dan[2*i  ]=dan[2*i]   + 4;
+		dan[2*i+1]=dan[2*i+1] + 4;
+	}
+	val=val*2;  
+ };
+ dan[18]=dan[18]+ 0x80; 
+ for (i = 0; i <= kol-1; i++)   
+ {
+	FT_Out_Buffer[2*i+adress]  =dan[i];
+	FT_Out_Buffer[2*i+adress+1]=dan[i];
+ }
+ adress=adress+2*kol;
+ }
+
+void shift0()
+{
+printf("shift0\n");
+    HC595(0xdb);
+  HC595(0xfa);
+  HC595(0xee);
+  HC595(0xcf);
+}
+
+/*?????????? ????????? ?????? ???????? ??? ?????? ???? ????????????? ??????*/
+void shift()
+{
+//printf("shift\n");
+  HC595(0xcb);
+  HC595(0xdb);
+  HC595(0xda);
+  HC595(0xfa);
+  HC595(0xea);
+  HC595(0xee);
+  HC595(0xce);
+  HC595(0xcf);
+}
+
+/*?????????? ????????? ?????? ???????? ??? "?????" ???????????? ??????????? ? ????????? ???????*/
+void shift2()
+{
+printf("shift2\n");
+  shift();
+  HC595(0xc7);
+  HC595(0xc7);
+  HC595(0xc7);
+  HC595(0xc7);
+  HC595(0xcb);
+  HC595(0xd9);
+  HC595(0xd9);
+  HC595(0xd9);
+  HC595(0xd9);
+  HC595(0xdb);
+  HC595(0xfa);
+  HC595(0xea);
+  HC595(0xee);
+  HC595(0xce);
+  HC595(0xcf);
+}
+
+/*?????????? ????????? ?????? ???????? ??? ?????? ???? ????????????? ?????? + ?????? SUB ??? ?????? ??????? ???????????*/
+void shift3()
+{
+printf("shift3\n");
+  HC595(0xcb);
+  HC595(0xdb);
+  /*SUB*/
+  HC595(0x9a);
+  HC595(0xba);
+  HC595(0xaa);
+  HC595(0xee);
+  HC595(0xce);
+  HC595(0xcf);
+}
+
+void clearline2()
+{
+printf("clearline2\n");
+Byte dout[4];
+int x;
+dout[0]=portsecond;
+dout[1]=portsecond+8;
+dout[2]=portfirst+8;
+dout[3]=portfirst;
+printf("clearline2-1\n");
+  for( x=0; x <= 79*xccd; x ++)
+  {
+//fprintf(stdout,"clearline2-2 %d \n",adress);
+    FT_Out_Buffer[adress+0]=dout[0]+0x40;
+    FT_Out_Buffer[adress+1]=dout[0];
+    FT_Out_Buffer[adress+2]=dout[3]-0x40;
+    FT_Out_Buffer[adress+3]=dout[3];
+    adress += 4;
+  }
+}
+
+/*?????????? ????????? ?????? ???????? ???:*/
+/*??????? ?????????? ????????. ???? ??? ?? ????????,*/
+/*?? ??????????? ? ??? ????? ????? ???????? ? ???????????.*/
+/*????????? ???? ??????? ?????? ? "???????" ? ??????????????? ????????.*/
+/*???????? ?????????? ????? "??????" ??????????? ? ????????? ???????*/
+void clearframe()
+{
+//fprintf(stdout,"clearframe %d\n",adress );
+        uint16_t y;
+        for( y=0; y <= 1012-1; y ++)
+            {
+                //fprintf(stdout,"clearframe %d-%d\n",y,adress );
+                shift();
+            }
+	clearline2();
+}
+
+/* ?????? ?????????????? ?????????? ?????? FT2232HL ? ???????? ?????? ???????????*/
+/*??-?? ???????????? AD9822 ????????? ??????? ??????? ????, ????? ???????, ? ? delphi ????????.*/
+/*?????????? ????? ??? int32, ? ?? word16 ??-?? ???????????? ??? ??????????? ?????????*/
+
+/*?????????? ???? ?????? ??????? ????? ???? ADBUS*/
+void *posExecute(void *arg)
+{
+//printf("poseExecute\n");
+uint16_t x,y,x1,byteCnt;
+bool readFailed;
+
+  readFailed=false;
+  byteCnt=0;
+  for( y= mYn; y <= mYn+mdeltY-1; y ++)
+  {
+    if (mBin == 1) 
+    {
+//Function Read_USB_Device_Buffer(var FT:DWord;Read_Count:Integer) : Integer;
+//    int ftdi_read_data(struct ftdi_context *ftdi, unsigned char *buf, int size);
+//    int ftdi_write_data(struct ftdi_context *ftdi, const unsigned char *buf, int size);
+//       ftdi_read_data(ftdi, rxbuf, sendsize);
+		
+      //if (~ errorWriteFlag)  byteCnt=ftdi_read_data(ftdi,FT_In_Buffer,8*mdeltX);
+      byteCnt=ftdi_read_data(ftdi,FT_In_Buffer,8*mdeltX);
+
+      if (byteCnt!=8*mdeltX)
+      {
+        readFailed=true;
+        //fprintf(stdout,"poseExecute bin==1 readfailed %d<>%d\n",byteCnt,8*mdeltX);
+        break;
+      }
+      for( x=0; x <= mdeltX - 1; x ++)
+      {
+//fprintf(stdout,"poseExecute x=%d y=%d\n",x,y);
+          x1=x+mXn;
+		
+        bufim[2*x1][2*y]=swap(FT_In_Buffer[4*x]);
+        bufim[2*x1][2*y+1]=swap(FT_In_Buffer[4*x+1]);
+        bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[4*x+2]);
+        bufim[2*x1+1][2*y]=swap(FT_In_Buffer[4*x+3]);
+      }
+    }
+    else {
+      //if (~ errorWriteFlag)
+      byteCnt=ftdi_read_data(ftdi,FT_In_Buffer,2*mdeltX);
+      if (byteCnt!=2*mdeltX) 
+      {
+        readFailed=true;
+        //fprintf(stdout,"poseExecute bin<>1 readfailed %d<>%d\n",byteCnt,2*mdeltX);
+        break;
+      }
+      for( x=0; x <= mdeltX - 1; x ++)
+      {
+//fprintf(stdout,"poseExecute x=%d y=%d\n",x,y);
+        x1=x+mXn;
+		
+        bufim[2*x1][2*y]=swap(FT_In_Buffer[x]);
+        bufim[2*x1+1][2*y]=swap(FT_In_Buffer[x]);
+        bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[x]);
+        bufim[2*x1][2*y+1]=swap(FT_In_Buffer[x]);
+      }
+    }
+  }
+  if (readFailed) 
+  {
+    errorReadFlag = true;
+    if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(ftdi);
+    if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(ftdi2);	
+  }
+  (void) arg;
+  pthread_exit(NULL);
+}
+
+/*???????? ?????? ? ???????????????*/
+void ComRead()
+{
+//printf("ComRead\n");
+	if (pthread_create(&co, NULL, posExecute, NULL)) {
+	perror("pthread_create");
+	//return EXIT_FAILURE;
+    }
+
+    if (pthread_join(co, NULL)) {
+	perror("pthread_join");
+	//return EXIT_FAILURE;
+    }
+  /*co:=posl.Create(true);
+  co.FreeOnTerminate:=true;
+  co.Priority:=tpNormal;
+  co.Resume;*/
+}
+
+/*???????????? 2 ??????:*/
+/*1.??????? ??? ???????.*/
+/*2.?/? ? ???????? 2*2.*/
+/*???????????? ??????? ICX453 ???????? ??, ??? ?????????????? ??????? ????? ????????? ??????? ?*/
+/*??? ????? ???? ????????????? ?????? ? ?????????????? ??????? "??????" ????? ???? ?????,*/
+/*??????? ?????????? ????? ??? ???? ???? ???????? ??????????.*/
+/*???????????? ????????:*/
+/*readframe, display, display2 - ??? 1 ??????,*/
+/*readframe2, display3, display4 - ??? 2 ??????*/
+/*?????????? ????????? ?????? ???????? ? ?????????? ???? ???????? ?????? ????? ? 1 ??????*/
+void readframe(int bin,int expoz)
+{
+//fprintf(stdout,"readframe %d %d \n",bin,expoz);
+rfstatus = 0;
+Byte dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28};
+    int x,y;
+
+  cameraState = cameraReading;
+  if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(ftdi);
+  if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(ftdi2);
+  adress=0;
+  if (expoz > 52) 
+  {
+    if (expoz < 500) 
+    {
+      shift3();
+      for( y=0; y <= expoz-52; y ++)
+      for( x=0; x <= ms1-1; x ++)
+        HC595(0xcf);
+    }
+    clearline2();
+    clearframe();
+  }
+  else {
+    clearline2();
+    clearframe();
+    shift3();
+    if (expoz > 0) 
+      for( y=0; y <= expoz; y ++)
+      for( x=0; x <= ms1-1; x ++)
+          HC595(0xcf);
+  }
+  shift2();
+  //fprintf(stdout,"readframe before write 1  : %d \n",adress);
+  //if (~ errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_Out_Buffer,adress);
+  f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+  //if (f < 0) fprintf(stdout,"write failed on channel 2 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi2));
+  adress=0;
+  //fprintf(stdout,"readframe before shift  : %d \n",adress);
+  for( y=0; y <= dy-1+mYn; y ++) shift();
+  //fprintf(stdout,"readframe before clearline2  : %d \n",adress);
+  clearline2();
+  //if (~ errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_Out_Buffer,adress);
+  //fprintf(stdout,"readframe before write 2  : %d \n",adress);
+  f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+  //if (f < 0) fprintf(stdout,"write failed on channel 2 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi2));
+  adress=0;
+  //fprintf(stdout,"readframe before comRead  : %d \n",adress);
+  ComRead();
+  //fprintf(stdout,"readframe before for  : %d \n",adress);
+  for( y=0; y <= mdeltY -1; y ++)
+  {
+    //fprintf(stdout,"readframe for y=%d \n",y);
+    adress=0;
+    shift();
+    for( x=0; x <= dx-1+4*mXn; x ++)
+    {
+      FT_Out_Buffer[adress+0]=dout[0]+0x40;
+      FT_Out_Buffer[adress+1]=dout[0];
+      FT_Out_Buffer[adress+2]=dout[3]-0x40;
+      FT_Out_Buffer[adress+3]=dout[3];
+      adress += 4;
+    }
+    if (bin == 1) 
+    {
+      for( x=0; x <= 4; x ++)
+      {
+        FT_Out_Buffer[adress+0]=dout[0]+0x40;
+        FT_Out_Buffer[adress+1]=dout[0];
+        FT_Out_Buffer[adress+2]=dout[3]-0x40;
+        FT_Out_Buffer[adress+3]=dout[3];
+        adress += 4;
+      }    //fprintf(stdout,"readframe for y=%d \n",y);
+
+      FT_Out_Buffer[adress+0]=dout[0]+0x40;
+      FT_Out_Buffer[adress+1]=dout[0];
+      FT_Out_Buffer[adress+2]=dout[3]-0x40;
+      FT_Out_Buffer[adress+3]=dout[3]-8;
+      adress += 4;
+      for( x=0; x <= 4*mdeltX-2; x ++)
+      {
+        //fprintf(stdout,"readframe for2 bin==1 y=%d x=%d \n",y,x);
+        FT_Out_Buffer[adress+0]=dout[0]+0x40;
+        FT_Out_Buffer[adress+1]=dout[0];
+        FT_Out_Buffer[adress+2]=dout[0]-8;
+        FT_Out_Buffer[adress+3]=dout[3]-0x40;
+        FT_Out_Buffer[adress+4]=dout[3];
+        FT_Out_Buffer[adress+5]=dout[3]-8;
+        adress += 6;
+      }
+    }
+    else {
+      for( x=0; x <= 4; x ++)
+      {
+        FT_Out_Buffer[adress+0]=dout[0]+0x40;
+        FT_Out_Buffer[adress+1]=dout[0];
+        FT_Out_Buffer[adress+2]=dout[0]+0x40;
+        FT_Out_Buffer[adress+3]=dout[0];
+        FT_Out_Buffer[adress+4]=dout[0]+0x40;
+        FT_Out_Buffer[adress+5]=dout[0];
+        FT_Out_Buffer[adress+6]=dout[0]+0x40;
+        FT_Out_Buffer[adress+7]=dout[0];
+        FT_Out_Buffer[adress+8]=dout[3];
+        FT_Out_Buffer[adress+9]=dout[3];
+        adress += 10;
+      }
+      FT_Out_Buffer[adress+0]=dout[0]+0x40;
+      FT_Out_Buffer[adress+1]=dout[0];
+      FT_Out_Buffer[adress+2]=dout[0]+0x40;
+      FT_Out_Buffer[adress+3]=dout[0];
+      FT_Out_Buffer[adress+4]=dout[0]+0x40;
+      FT_Out_Buffer[adress+5]=dout[0];
+      FT_Out_Buffer[adress+6]=dout[0]+0x40;
+      FT_Out_Buffer[adress+7]=dout[0];
+      FT_Out_Buffer[adress+8]=dout[3];
+      FT_Out_Buffer[adress+9]=dout[3]-8;
+      adress += 10;
+      for( x=0; x <= mdeltX-2; x ++)
+      {
+        FT_Out_Buffer[adress+0]=dout[0]+0x40;
+        FT_Out_Buffer[adress+1]=dout[0]-8;
+        FT_Out_Buffer[adress+2]=dout[0]+0x40;
+        FT_Out_Buffer[adress+3]=dout[0];
+        FT_Out_Buffer[adress+4]=dout[0]+0x40;
+        FT_Out_Buffer[adress+5]=dout[0];
+        FT_Out_Buffer[adress+6]=dout[0]+0x40;
+        FT_Out_Buffer[adress+7]=dout[0];
+        FT_Out_Buffer[adress+8]=dout[3];
+        FT_Out_Buffer[adress+9]=dout[3]-8;
+        adress += 10; 
+      }
+    }
+    FT_Out_Buffer[adress+0]=dout[0]+0x40;
+    FT_Out_Buffer[adress+1]=dout[0]-8;
+    FT_Out_Buffer[adress+2]=dout[3]-0x40;
+    FT_Out_Buffer[adress+3]=dout[3];
+    adress += 4;
+    for( x=0; x <= dx2-1+6000-4*mdeltX-4*mXn; x ++)
+    {
+      FT_Out_Buffer[adress+0]=dout[0]+0x40;
+      FT_Out_Buffer[adress+1]=dout[0];
+      FT_Out_Buffer[adress+2]=dout[3]-0x40;
+      FT_Out_Buffer[adress+3]=dout[3];
+      adress += 4;
+    }
+    //fprintf(stdout,"readframe before write 3  - y=%d \n",y);
+    //if (~ errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_Out_Buffer,adress);
+    f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+    //if (f < 0) fprintf(stderr,"write failed on channel 2 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi2));
+    //fprintf(stdout,"readframe after write 3  - result=%d \n",f);
+  }
+  imageReady = true;
+  cameraState=cameraIdle;
+  //return rfstatus;
+}
+
+void ExposureTimerTick(void)     /*stdcall;*/
+{
+//printf("ExposureTimerTick\n");
+  canStopExposureNow = false;
+  //KillTimer (0,ExposureTimer);
+  IERmTimer (ExposureTimer);
+  adress=0;
+  HC595(0xcf);
+  //if (! errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_OUT_Buffer,adress);
+  f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+  //if (f < 0) fprintf(stderr,"write failed on channel 2 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi2));
+  readframe (mBin, 1000);
+  canStopExposureNow = true;
+}
+
+
+void Timer15VTick(void)     /*stdcall;*/
+{
+//printf("Timer15VTick\n");
+  //KillTimer (0,Timer15V);
+  IERmTimer (Timer15V);
+  adress=0;
+  HC595(0x4f);
+  //if (! errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_OUT_Buffer,adress);
+  f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+  //if (f < 0) fprintf(stderr,"write failed on channel 2 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi2));
+
+  canStopExposureNow = true;
+
+}
+
+/*Stop Exposure Timer, purge FTDI FT2232HL buffers and frame bufeer*/
+void StopExposure()
+{
+//printf("StopExposure\n");
+  //KillTimer (0,ExposureTimer);
+  IERmTimer(ExposureTimer);
+  //if (! errorWriteFlag)  Purge_USB_Device(FT_CAM8A,FT_PURGE_RX);
+  ftdi_usb_purge_rx_buffer(ftdi);
+  cameraState = cameraIdle;
+  imageReady = true;
+
+}
+
+/*???????? ?????? 0,1 ??? ?? ?????????? 15 ???*/
+void StopExposureTimerTick()     /*stdcall;*/
+{
+//printf("StopExposureTimerTick\n");
+  if (canStopExposureNow) 
+    {
+      //KillTimer (0,stopExposureTimer);
+	  IERmTimer(stopExposureTimer);
+      StopExposure();
+    }
+  checkCanStopExposureCount=checkCanStopExposureCount+1;
+  //if (checkCanStopExposureCount==150)  KillTimer (0,stopExposureTimer);
+  if (checkCanStopExposureCount==150)  IERmTimer (stopExposureTimer);
+
+}
+
+/*Connect camera, return bool result*/
+/*????? ???????????? ????????? ? ????????????? AD9822*/
+bool cameraConnect()               /*stdcall; export;*/
+{
+//printf("cameraConnect\n");
+FT_OP_flag = true;
+
+    if ((ftdi  = ftdi_new()) == 0) {/*fprintf(stderr, "ftdi_new 1 failed\n");exit(-1);*/}
+    if ((ftdi2 = ftdi_new()) == 0) {/*fprintf(stderr, "ftdi_new 2 failed\n");exit(-1);*/}
+
+    ftdi_set_interface(ftdi , INTERFACE_A);
+    ftdi_set_interface(ftdi2, INTERFACE_B);
+
+    f = ftdi_usb_open(ftdi, 0x0403, 0x6010);
+    if (f < 0 && f != -5)
+    {
+        //fprintf(stderr, "unable to open ftdi device: %d (%s)\n", f, ftdi_get_error_string(ftdi));
+        ftdi_free(ftdi);
+        exit(-1);
+    }
+    //printf("ftdi open succeeded(channel 1): %d\n",f);
+
+    f = ftdi_usb_open(ftdi2, 0x0403, 0x6010);
+    if (f < 0 && f != -5)
+    {
+        //fprintf(stderr, "unable to open ftdi device: %d (%s)\n", f, ftdi_get_error_string(ftdi));
+        ftdi_free(ftdi2);
+        exit(-1);
+    }
+    //printf("ftdi open succeeded(channel 2): %d\n",f);
+
+// BitBang channel 2
+    ftdi_set_bitmode(ftdi2, 0xFF, BITMODE_BITBANG);
+// Baudrate
+    ftdi_set_baudrate(ftdi ,1600000);
+    ftdi_set_baudrate(ftdi2,1600000);
+    ftdi_set_latency_timer(ftdi ,2);
+    ftdi_set_latency_timer(ftdi2,2);
+//timeouts ????????????????
+    ftdi_usb_purge_rx_buffer(ftdi);
+    ftdi_usb_purge_tx_buffer(ftdi);
+    ftdi_usb_purge_buffers(ftdi);
+    ftdi_usb_purge_rx_buffer(ftdi2);
+    ftdi_usb_purge_tx_buffer(ftdi2);
+    ftdi_usb_purge_buffers(ftdi2);
+    AD9822(0,0x58);
+    AD9822(1,0xA0);
+    AD9822(6,0);
+    //???????? ??????????????? ?????. ??? ?? ????????????? ???
+    AD9822(3,34);
+    adress=0;
+    HC595(0xCF);
+    f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+        //if (f < 0) fprintf(stderr,"write failed on channel 1 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi));
+
+
+  isConnected = FT_OP_flag;
+  errorReadFlag = false;
+  cameraState = cameraIdle;
+  if(FT_OP_flag==false)  cameraState = cameraError;
+  return isConnected;
+}
+
+/*Disconnect camera, return bool result*/
+bool cameraDisconnect(void)               /*stdcall; export;*/
+{
+//printf("cameraDisconnect\n");
+    bool FT_OP_flag;
+
+  /*void cameraDisconnect_result;
+  FT_OP_flag = true;
+  if (Close_USB_Device(FT_CAM8A) != FT_OK)  FT_OP_flag = false;
+  if (Close_USB_Device(FT_CAM8B) != FT_OK)  FT_OP_flag = false;
+  isConnected = ! FT_OP_flag;
+  Result= FT_OP_flag;
+  return cameraDisconnect_result;*/
+ 
+    ftdi_usb_close(ftdi);
+    ftdi_free(ftdi);
+    ftdi_disable_bitbang(ftdi2);
+    ftdi_usb_close(ftdi2);
+    ftdi_free(ftdi2);
+	return true;
+   
+}
+
+/*Check camera connection, return bool result*/
+bool cameraIsConnected()               /*stdcall; export;*/
+{
+  return isConnected;
+}
+
+int cameraStartExposure (int Bin,int StartX,int StartY,int NumX,int NumY, double Duration, bool light) /*stdcall; export;*/
+{
+//printf("cameraStartExposure\n");
+  canStopExposureNow = false;
+  errorReadFlag = false;
+  mBin = Bin;
+  if (light)  zatv=0;
+  else zatv=1;
+  if ((NumY+StartY > CameraHeight)||(StartY < 0)||(NumY <= 0)) 
+  {
+    mYn=0;
+    mdeltY=yccd;
+  }
+  else {
+    mYn=StartY / 2;
+    mdeltY=NumY / 2;
+  }
+  if ((NumX+StartX > CameraWidth)||(StartX < 0)||(NumX <= 0)) 
+  {
+    mXn=0;
+    mdeltX=xccd;
+  }
+  else {
+    mXn=StartX / 2;
+    mdeltX=NumX / 2;
+  }
+  imageReady = false;
+  cameraState = cameraExposing;
+  if (Duration > 0.499) 
+  {
+    adress=0;
+    shift3();
+    //if (! errorWriteFlag)  errorWriteFlag = Write_USB_Device_Buffer_wErr(FT_CAM8B,&FT_OUT_Buffer,adress);
+    f = ftdi_write_data(ftdi2, FT_Out_Buffer, adress);
+    //if (f < 0) fprintf(stderr,"write failed on channel 1 for 0x%x, error %d (%s)\n", FT_Out_Buffer[0], f, ftdi_get_error_string(ftdi));
+
+    //ExposureTimer = addTimer (0,0,round(Duration*1000-52),&ExposureTimerTick);
+    //Timer15V = addTimer (0,0,1000,&Timer15VTick);
+	void *p;
+//printf("cameraStartExposure timers\n");
+    ExposureTimer = IEAddTimer (Duration*1000-52,(IE_TCF *)ExposureTimerTick,p);
+    Timer15V = IEAddTimer (1000,(IE_TCF *)Timer15VTick,p);
+  }
+  else {
+    //readframe (mBin,round(Duration*1000));
+//printf("cameraStartExposure pas timers\n");
+	readframe (mBin,Duration*1000);
+  }
+  return rfstatus;
+
+}
+
+/*Stop camera exposure when it is possible*/
+bool cameraStopExposure()               /*stdcall; export;*/
+{
+//printf("cameraStopExposure\n");
+  if (canStopExposureNow)  StopExposure();
+  else
+    {
+      checkCanStopExposureCount=0;
+      //stopExposureTimer = settimer (0,0,100,&StopExposureTimerTick);
+	  void *p;
+	  IEAddTimer (100,(IE_TCF *)StopExposureTimerTick,p);
+    }
+  return true;
+
+}
+
+/*Get camera state, return int result*/
+int cameraGetCameraState()           /*stdcall; export;*/
+{
+//printf("cameraGetCameraState\n");
+  int Result;
+  if (! errorWriteFlag)  Result = cameraState;
+  else Result = cameraError;
+  return Result;
+}
+
+/*Check ImageReady flag, is image ready for transfer - transfer image to driver and return bool ImageReady flag*/
+bool cameraGetImageReady()               /*stdcall; export;*/
+{
+//printf("cameraGetImageReady\n");
+  return imageReady;
+}
+
+/*Get back pointer to image*/
+void cameraGetImage(void *buff)            /*stdcall; export;*/
+{
+    //printf("cameraGetImage\n");
+  cameraState=cameraDownload;
+  cameraState=cameraIdle;
+  buff = *bufim;
+}
+
+/*Set camera gain, return bool result*/
+bool cameraSetGain (int val)                   /*stdcall; export;*/
+{
+//printf("cameraSetGain\n");
+  AD9822(3,val);
+  return true;
+}
+
+/*Set camera offset, return bool result*/
+bool cameraSetOffset (int val)                   /*stdcall; export;*/
+{
+//printf("cameraSetOffset\n");
+  int x;
+  x=abs(2*val);
+  if (val < 0)  x=x+256;
+  AD9822(6,x);
+  return true;
+}
+
+/*Get camera error state, return bool result*/
+int cameraGetError()           /*stdcall; export;*/
+{
+//printf("cameraGetError\n");
+  int res;
+
+  res=0;
+  if (errorWriteFlag)  res =res+2;
+  if (errorReadFlag)  res =res+1;
+  return res;
+}
+
+/*Set camera baudrate, return bool result*/
+bool cameraSetBaudrate(int val)                   /*stdcall; export;*/
+{
+//printf("cameraSetBaudrate\n");
+bool Result;
+  /*setup FT2232 baud rate*/
+  if ((val>=80) && (val<=240)) 
+  {
+    spusb = val*10000;
+    ms1 = spusb / 8000;
+    FT_Current_Baud = spusb;
+    ftdi_set_baudrate(ftdi , FT_Current_Baud);
+    ftdi_set_baudrate(ftdi2, FT_Current_Baud);	
+    Result = true;
+  }
+  else Result = false;
+  return Result;
+}
+
+uint16_t swap(uint16_t x)
+{
+/*        uint8_t hibyte = (x & 0xff00) >> 8;
+        uint8_t lobyte = (x & 0xff);
+        return lobyte << 8 | hibyte;*/
+	return x;
+}
