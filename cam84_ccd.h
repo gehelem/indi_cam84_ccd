@@ -31,6 +31,10 @@ class Cam84CCD : public INDI::CCD
 public:
     Cam84CCD();
 
+    bool ISNewNumber (const char *dev, const char *name, double values[], char *names[], int n);
+    bool ISNewSwitch (const char *dev, const char *name, ISState *states, char *names[], int n);
+
+
 protected:
     // General device functions
     bool Connect();
@@ -55,6 +59,15 @@ private:
     bool InExposure;
     // Struct to keep timing
     struct timeval ExpStart;
+
+    INumber GainN[1];
+    INumberVectorProperty GainNP;
+
+    INumber OffsetN[1];
+    INumberVectorProperty OffsetNP;
+
+    INumber BaudrateN[1];
+    INumberVectorProperty BaudrateNP;
 
     float ExposureRequest;
     float TemperatureRequest;
