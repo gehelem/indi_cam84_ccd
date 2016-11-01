@@ -1,2 +1,0 @@
-/home/gilles/cam84/cam84/indi_cam84_ccd/build/CMakeFiles/cam84.dir
-/home/gilles/cam84/cam84/indi_cam84_ccd/build/CMakeFiles/indi_cam84_ccd.dir
