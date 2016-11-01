@@ -1,0 +1,1 @@
+/usr/bin/c++    -std=c++11 -pthread    CMakeFiles/indi_cam84_ccd.dir/cam84_ccd.o  -o indi_cam84_ccd -rdynamic libcam84.a /usr/local/lib/libftd2xx.so -lindidriver -lcfitsio -lm -lz -Wl,-rpath,/usr/local/lib: 

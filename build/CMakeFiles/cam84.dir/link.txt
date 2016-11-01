@@ -1,0 +1,2 @@
+/usr/bin/ar cr libcam84.a  CMakeFiles/cam84.dir/libcam84.o
+/usr/bin/ranlib libcam84.a

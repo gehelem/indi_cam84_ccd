@@ -733,6 +733,7 @@ bool cameraStopExposure()               /*stdcall; export;*/
 /*Get camera state, return int result*/
 int cameraGetCameraState()           /*stdcall; export;*/
 {
+//printf("cameraGetCameraState\n");
   int Result;
   if (! errorWriteFlag)  Result = cameraState;
   else Result = cameraError;
@@ -742,14 +743,27 @@ int cameraGetCameraState()           /*stdcall; export;*/
 /*Check ImageReady flag, is image ready for transfer - transfer image to driver and return bool ImageReady flag*/
 bool cameraGetImageReady()               /*stdcall; export;*/
 {
+//printf("cameraGetImageReady\n");
   return imageReady;
 }
 
 
 uint16_t cameraGetImage(int i,int j)
 {
+//printf("cameraGetImage\n");
+/*for ( int i = 0 ; i < 100 ;  i ++)
+      for( int j = 0 ; j<100 ; j ++)
+          bb[i][j]=bufim[i][j];*/
+
   cameraState=cameraDownload;
   cameraState=cameraIdle;
+  //return bufim[i][j];
+  //return rand() % 65535;
+  //return 0;
+  //if ((i<100) &(j<100 )) return 0;
+  //if ((i>2900)&(j>1900)) return 65535;
+  //if ((i<100) &(j>1900)) return 65535;
+  //if ((i>2900)&(j<100 )) return 65535;
   return bufim[i][j];
 }
 
@@ -760,23 +774,30 @@ buff = bufim;
 /*Set camera gain, return bool result*/
 bool cameraSetGain (int val)                   /*stdcall; export;*/
 {
+printf("cameraSetGain\n");
   AD9822(3,val);
   return true;
+  printf("cameraSetGain END\n");
 }
 
 /*Set camera offset, return bool result*/
 bool cameraSetOffset (int val)                   /*stdcall; export;*/
 {
+printf("cameraSetOffset\n");
   int x;
   x=abs(2*val);
   if (val < 0)  x=x+256;
   AD9822(6,x);
+  //AD9822(6,val);
+  printf("cameraSetOffset END\n");
+
   return true;
 }
 
 /*Get camera error state, return bool result*/
 int cameraGetError()           /*stdcall; export;*/
 {
+//printf("cameraGetError\n");
   int res;
 
   res=0;
@@ -788,6 +809,7 @@ int cameraGetError()           /*stdcall; export;*/
 /*Set camera baudrate, return bool result*/
 bool cameraSetBaudrate(int val)                   /*stdcall; export;*/
 {
+printf("cameraSetBaudrate\n");
 bool Result;
   /*setup FT2232 baud rate*/
   if ((val>=80) & (val<=240))
@@ -799,12 +821,14 @@ bool Result;
     Result = true;
   }
   else Result = false;
+printf("cameraSetBaudrate END\n");
   return Result;
 }
 
 uint16_t swap(uint16_t x)
 {
         uint16_t ret;
+        //fprintf(stdout,"swap %d\n",x);
         uint8_t hibyte = (x & 0xFF00) >> 8;
         uint8_t lobyte = (x & 0x00FF);
         ret=  (lobyte << 8) | hibyte; // originale ?
