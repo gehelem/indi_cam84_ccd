@@ -1,0 +1,6 @@
+# Ignore build directory
+build
+
+# Gedit backup files
+*~
+
