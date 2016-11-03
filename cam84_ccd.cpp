@@ -116,6 +116,25 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             return true;
         }
 
+        if (!strcmp(name, LibftditimersNP.name))
+        {
+            IUUpdateNumber(&LibftditimersNP, values, names, n);
+            LibftditimersNP.s = IPS_OK;
+            IDSetNumber(&LibftditimersNP, NULL);
+            cameraSetLibftdiTimers(LibftdilatencyN[0].value,LibftditimersN[0].value);
+            IDMessage(getDeviceName(), "Cam84 set libftdi timers = %d",(int) LibftditimersN[0].value);
+            return true;
+        }
+
+       if (!strcmp(name, LibftdilatencyNP.name))
+        {
+            IUUpdateNumber(&LibftdilatencyNP, values, names, n);
+            LibftdilatencyNP.s = IPS_OK;
+            IDSetNumber(&LibftdilatencyNP, NULL);
+            cameraSetLibftdiTimers(LibftdilatencyN[0].value,LibftditimersN[0].value);
+            IDMessage(getDeviceName(), "Cam84 set libftdi latency = %d",(int) LibftdilatencyN[0].value);
+            return true;
+        }
 
     }
 
@@ -201,6 +220,18 @@ bool Cam84CCD::initProperties()
     IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
+    /* Add Latency number property (gs) */
+    IUFillNumber(LibftdilatencyN, "LATENCY", "Latency", "%g", 2, 100, 2, 2);
+    IUFillNumberVector(&LibftdilatencyNP, LibftdilatencyN, 1, getDeviceName(),"LATENCY",
+                       "Latency", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+
+    /* Add Tiemrs number property (gs) */
+    IUFillNumber(LibftditimersN, "TIMERS", "Timers", "%g", 1000, 50000, 1000, 2000);
+    IUFillNumberVector(&LibftditimersNP, LibftditimersN, 1, getDeviceName(),"TIMERS",
+                       "Timers", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+
+
+
 
     // We set the CCD capabilities
     uint32_t cap = CCD_CAN_ABORT | CCD_CAN_BIN | CCD_CAN_SUBFRAME | CCD_HAS_BAYER;
@@ -232,12 +263,16 @@ bool Cam84CCD::updateProperties()
         defineNumber(&GainNP);
         defineNumber(&OffsetNP);
         defineNumber(&BaudrateNP);
+        defineNumber(&LibftditimersNP);
+        defineNumber(&LibftdilatencyNP);
     }
     else
     {
         deleteProperty(GainNP.name);
         deleteProperty(OffsetNP.name);
         deleteProperty(BaudrateNP.name);
+        deleteProperty(LibftditimersNP.name);
+        deleteProperty(LibftdilatencyNP.name);
     }
 
     return true;

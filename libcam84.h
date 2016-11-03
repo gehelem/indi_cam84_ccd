@@ -18,6 +18,7 @@ int  cameraGetError(void);
 bool cameraSetBaudrate(int val);  
 uint16_t cameraGetImage(int i, int j);
 void cameraGetImage2(void *buff);
+bool cameraSetLibftdiTimers(int lat, int timers);
 
 #ifdef __cplusplus
 }

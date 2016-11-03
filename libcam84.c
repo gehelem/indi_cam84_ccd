@@ -285,8 +285,8 @@ void *posExecute(void *arg)
 //printf("poseExecute\n");
 uint16_t x,y,x1,byteCnt;
 bool readFailed;
-//fprintf(stdout,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
-//fprintf(stdout,"poseexecute y : %d>%d x : %d>%d\n",mYn,mYn+mdeltY-1,0,mdeltX - 1);
+//fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
+//fprintf(stderr,"poseexecute y : %d>%d x : %d>%d\n",mYn,mYn+mdeltY-1,0,mdeltX - 1);
 readFailed=false;
   byteCnt=0;
   for( y= mYn; y <= mYn+mdeltY-1; y ++)
@@ -296,12 +296,12 @@ readFailed=false;
 		
 //      ftStatus=FT_Read(CAM8A, FT_In_Buffer, 8*mdeltX, &dwBytesRead);
 	  dwBytesRead=ftdi_read_data(CAM8A,FT_In_Buffer, 8*mdeltX);
-      if (dwBytesRead < 0) fprintf(stdout,"FT_Read failed (%d)\n",dwBytesRead);
+      if (dwBytesRead < 0) fprintf(stderr,"FT_Read failed (%d)\n",dwBytesRead);
 
       if (dwBytesRead!=8*mdeltX)
       {
         readFailed=true;
-        fprintf(stdout,"poseExecute bin==1 readfailed %d<>%d - %d / %d \n",dwBytesRead,8*mdeltX,y,mYn+mdeltY-1);
+        fprintf(stderr,"poseExecute bin==1 readfailed %d<>%d - %d / %d \n",dwBytesRead,8*mdeltX,y,mYn+mdeltY-1);
         break;
       }
 
@@ -317,12 +317,12 @@ readFailed=false;
     else {
 //        ftStatus=FT_Read(CAM8A, FT_In_Buffer, 2*mdeltX, &dwBytesRead);
 	  dwBytesRead=ftdi_read_data(CAM8A,FT_In_Buffer, 2*mdeltX);
-      if (dwBytesRead < 0) fprintf(stdout,"FT_Read failed (%d)\n",dwBytesRead);
+      if (dwBytesRead < 0) fprintf(stderr,"FT_Read failed (%d)\n",dwBytesRead);
 
         if (dwBytesRead!=2*mdeltX)
         {
           readFailed=true;
-          fprintf(stdout,"poseExecute bin<>1 readfailed %d<>%d\n",dwBytesRead,2*mdeltX);
+          fprintf(stderr,"poseExecute bin<>1 readfailed %d<>%d\n",dwBytesRead,2*mdeltX);
           break;
         }
       for( x=0; x <= mdeltX - 1; x ++)
@@ -579,14 +579,9 @@ bool cameraConnect()               /*stdcall; export;*/
 // Baudrate
     cameraSetBaudrate(150);
 
-    if (ftdi_set_latency_timer(CAM8A,20)<0) fprintf(stderr,"libftdi error set latency interface A\n");
-    if (ftdi_set_latency_timer(CAM8B,20)<0) fprintf(stderr,"libftdi error set latency interface B\n");;
+//timeouts - latency
+    cameraSetLibftdiTimers(2,12000);
 
-//timeouts
-    CAM8A->usb_read_timeout=120000;
-    CAM8A->usb_read_timeout=120000;
-    CAM8B->usb_write_timeout=120000;
-    CAM8B->usb_write_timeout=120000;
 
 //Purge
 	if (ftdi_usb_purge_rx_buffer(CAM8A)<0) fprintf(stderr,"libftdi error purge RX interface A\n");
@@ -769,6 +764,17 @@ bool Result;
   }
   else Result = false;
   return Result;
+}
+
+bool cameraSetLibftdiTimers(int lat, int timers)
+{
+    if (ftdi_set_latency_timer(CAM8A,lat)<0) fprintf(stderr,"libftdi error set latency interface A\n");
+    if (ftdi_set_latency_timer(CAM8B,lat)<0) fprintf(stderr,"libftdi error set latency interface B\n");
+    CAM8A->usb_read_timeout=timers;
+    CAM8A->usb_read_timeout=timers;
+    CAM8B->usb_write_timeout=timers;
+    CAM8B->usb_write_timeout=timers;
+    return true;
 }
 
 uint16_t swap(uint16_t x)

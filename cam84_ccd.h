@@ -69,6 +69,12 @@ private:
     INumber BaudrateN[1];
     INumberVectorProperty BaudrateNP;
 
+    INumber LibftditimersN[1];
+    INumberVectorProperty LibftditimersNP;
+
+    INumber LibftdilatencyN[1];
+    INumberVectorProperty LibftdilatencyNP;
+
     float ExposureRequest;
     float TemperatureRequest;
     int   timerID;
