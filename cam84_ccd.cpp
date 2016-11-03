@@ -197,7 +197,7 @@ bool Cam84CCD::initProperties()
                        "Offset", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Baudrate number property (gs) */
-    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", 80, 240, 10, 80);
+    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", 80, 150, 10, 150);
     IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 

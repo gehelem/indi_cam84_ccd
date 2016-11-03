@@ -1,20 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-//#include <ftdi.h>
-#include "ftd2xx.h"
+#include <ftdi.h>
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-//#include <thread.h>
 #include <time.h>
 #include <sys/time.h>
 #include "libcam84.h"
 #include "config.h"
 #include <unistd.h>
-
-//using namespace std;
 
 typedef uint8_t  Byte;
 typedef uint16_t Word;
@@ -43,15 +39,8 @@ const int cameraReading = 3;
 const int cameraDownload = 4;
 const int cameraError = 5;
 
-
-/*Class for reading thread
-posl = class(TThread)
-private
- Private declarations
-protected
-procedure Execute; override;
-end;*/
-int kkk;
+struct ftdi_context *CAM8A, *CAM8B;
+int ftdi_result;
 int rfstatus =0;
 double durat;
   //int x;
@@ -114,15 +103,12 @@ void ComRead(void);
 
 uint16_t swap(uint16_t x);
 
-FT_HANDLE CAM8A;
-FT_HANDLE CAM8B;
-FT_STATUS ftStatus = FT_OK;
 //int ftStatus = 0;
-DWORD   bytesWritten = 0;
-DWORD   dwBytesRead  = 0;
+uint32_t   bytesWritten = 0;
+int32_t   dwBytesRead  = 0;
 char *PORTA;
 char *PORTB;
-DWORD numDevs;
+uint16_t numDevs;
 char *BufPtrs[3];   // pointer to array of 3 pointers
 char Buffer1[64];      // buffer for description of first device
 char Buffer2[64];      // buffer for description of second device
@@ -144,11 +130,9 @@ char Buffer[64]; // more than enough room!
 
 void AD9822(uint8_t adr,uint16_t val)
 {
-printf("AD9822 %d %d\n",adr,val);
 int kol = 64;
 uint8_t dan[kol];
 int i;
-//memset(array,fill_this_character,sizeof(array));
 memset(dan,portfirst,kol);
     for (i = 1; i <= 32; i++)  { dan[i]=dan[i] & 0xFE;          };
     for (i = 0; i <= 15; i++)  { dan[2*i+2]=dan[2*i+2] +2 ;      };
@@ -164,14 +148,14 @@ memset(dan,portfirst,kol);
     if ((val &   4)==4)     { dan[27]=dan[27]+4;    dan[28]=dan[28]+4; };
     if ((val &   2)==2)     { dan[29]=dan[29]+4;    dan[30]=dan[30]+4; };
     if ((val &   1)==1)     { dan[31]=dan[31]+4;    dan[32]=dan[32]+4; };
-    if (FT_Write(CAM8B, dan, sizeof(dan),&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+    if (  ftdi_write_data(CAM8B, dan, sizeof(dan)) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
 }
 
 /*?????????? ????????? ?????? ???????? ??? ???????? ????? val ?? ?????? ?????????? HC595.*/
 /*???????? ???? ? ???????????????? ????.*/
 void HC595(uint8_t va)
 {
-//fprintf(stdout,"HC595 %d \n",adress);
+//fprintf(stderr,"HC595 %d \n",adress);
 int kol = 20;
 uint8_t dan[kol];
 int i;
@@ -310,8 +294,9 @@ readFailed=false;
     if (mBin == 1) 
     {
 		
-      ftStatus=FT_Read(CAM8A, FT_In_Buffer, 8*mdeltX, &dwBytesRead);
-      if (ftStatus != FT_OK) fprintf(stdout,"FT_Read failed (%d)\n",ftStatus);
+//      ftStatus=FT_Read(CAM8A, FT_In_Buffer, 8*mdeltX, &dwBytesRead);
+	  dwBytesRead=ftdi_read_data(CAM8A,FT_In_Buffer, 8*mdeltX);
+      if (dwBytesRead < 0) fprintf(stdout,"FT_Read failed (%d)\n",dwBytesRead);
 
       if (dwBytesRead!=8*mdeltX)
       {
@@ -330,8 +315,9 @@ readFailed=false;
       }
     }
     else {
-        ftStatus=FT_Read(CAM8A, FT_In_Buffer, 2*mdeltX, &dwBytesRead);
-        if (ftStatus != FT_OK) fprintf(stdout,"FT_Read failed (%d)\n",ftStatus);
+//        ftStatus=FT_Read(CAM8A, FT_In_Buffer, 2*mdeltX, &dwBytesRead);
+	  dwBytesRead=ftdi_read_data(CAM8A,FT_In_Buffer, 2*mdeltX);
+      if (dwBytesRead < 0) fprintf(stdout,"FT_Read failed (%d)\n",dwBytesRead);
 
         if (dwBytesRead!=2*mdeltX)
         {
@@ -352,8 +338,8 @@ readFailed=false;
   if (readFailed) 
   {
     errorReadFlag = true;
-    if (~ errorWriteFlag)  FT_Purge(CAM8A,FT_PURGE_RX);
-    if (~ errorWriteFlag)  FT_Purge(CAM8B,FT_PURGE_TX);
+    if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
+    if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
   }
   (void) arg;
   pthread_exit(NULL);
@@ -377,12 +363,11 @@ uint8_t dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28
     int x,y;
 
   cameraState = cameraReading;
-  if (~ errorWriteFlag)  FT_Purge(CAM8A,FT_PURGE_RX);
-  if (~ errorWriteFlag)  FT_Purge(CAM8B,FT_PURGE_TX);
-  FT_Purge(CAM8A,FT_PURGE_RX);
-  FT_Purge(CAM8B,FT_PURGE_TX);
+  if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
+  if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
+  ftdi_usb_purge_rx_buffer(CAM8A);
+  ftdi_usb_purge_tx_buffer(CAM8B);
   adress=0;
-  fprintf(stdout,"expoz %d\n",expoz);
 
   if (expoz > 52)
   {
@@ -409,11 +394,13 @@ uint8_t dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28
 
 
   shift2();
-  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != FT_OK) fprintf(stderr,"write failed on channel 2)\n");
+//  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != FT_OK) fprintf(stderr,"write failed on channel 2)\n");
+  if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
   adress=0;
   for( y=0; y <= dy-1+mYn; y ++) shift();
   clearline2();
-  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != FT_OK) fprintf(stderr,"write failed on channel 2)\n");
+//  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != FT_OK) fprintf(stderr,"write failed on channel 2)\n");
+  if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
 
   adress=0;
   pthread_t t1;
@@ -512,7 +499,9 @@ uint8_t dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28
       FT_Out_Buffer[adress+3]=dout[3];
       adress += 4;
     }
-    if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+//    if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+    if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
+
   }
   imageReady = true;
   cameraState=cameraIdle;
@@ -523,16 +512,14 @@ void *ExposureTimerTick(void *arg)     /*stdcall;*/
   uint32_t dd;
   dd = (durat*1000-52)*1000;
   usleep(dd);
-  printf("ExposureTimerTick %d\n",dd);
   canStopExposureNow = false;
   adress=0;
   //on +15V
   HC595(0xCF);
-    if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
-    fprintf(stdout,"FT_Write ExposureTimerTick %d/%d\n",adress,bytesWritten);
+    //if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+    if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
   readframe (mBin, 1000);
   canStopExposureNow = true;
-  printf("ExposureTimerTick end\n");
   (void) arg;
   pthread_exit(NULL);
 }
@@ -541,14 +528,12 @@ void *ExposureTimerTick(void *arg)     /*stdcall;*/
 void *Timer15VTick(void *arg)     /*stdcall;*/
 {
   usleep(1000*1000);
-  printf("Timer15VTick\n");
   adress=0;
   HC595(0x4F);
-  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
-    fprintf(stdout,"FT_Write  Timer15VTick %d/%d\n",adress,bytesWritten);
+//  if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+  if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
 
   canStopExposureNow = true;
-  printf("Timer15VTick end\n");
   (void) arg;
   pthread_exit(NULL);
 }
@@ -556,7 +541,7 @@ void *Timer15VTick(void *arg)     /*stdcall;*/
 /*Stop Exposure Timer, purge FTDI FT2232HL buffers and frame bufeer*/
 void StopExposure()
 {
-  if (~ errorWriteFlag)  FT_Purge(CAM8A,FT_PURGE_RX);
+  if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
 
   cameraState = cameraIdle;
   imageReady = true;
@@ -568,7 +553,7 @@ void StopExposureTimerTick()     /*stdcall;*/
 {
   if (canStopExposureNow) 
     {
-      StopExposure();printf("ftdi open succeeded(channel 2): %d\n",f);
+      StopExposure();
     }
   checkCanStopExposureCount=checkCanStopExposureCount+1;
   if (checkCanStopExposureCount==150)  ;
@@ -579,58 +564,35 @@ void StopExposureTimerTick()     /*stdcall;*/
 /*????? ???????????? ????????? ? ????????????? AD9822*/
 bool cameraConnect()               /*stdcall; export;*/
 {
-printf("cameraConnect\n");
 
-
-FT_OP_flag = true;
-
-
-    DWORD version;
-    FT_GetLibraryVersion(&version);
-    //printf("ftdi version: %x\n",version);
-
-    // initialize the array of pointers
-    BufPtrs[0] = Buffer1;
-    BufPtrs[1] = Buffer2;
-    BufPtrs[2] = NULL;      // last entry should be NULL
-
-    ftStatus = FT_ListDevices(BufPtrs,&numDevs,FT_LIST_ALL|FT_OPEN_BY_DESCRIPTION);
-    if (ftStatus == FT_OK) {
-    }
-    else {
-        // FT_ListDevices failed
-    }
-
-
-    PORTA="CAM8A";
-    PORTB="CAM8B";
-
-    ftStatus=FT_OpenEx(PORTA,FT_OPEN_BY_SERIAL_NUMBER,&CAM8A);
-    if (ftStatus!=FT_OK) { fprintf(stdout, "unable to open ftdi device: 1 (%d)\n", ftStatus); exit(-1);}
-    ftStatus=FT_OpenEx(PORTB,FT_OPEN_BY_SERIAL_NUMBER,&CAM8B);
-    if (ftStatus!=FT_OK) { fprintf(stdout, "unable to open ftdi device: 2 (%d)\n", ftStatus); exit(-1);}
+    FT_OP_flag = true;
+    CAM8A = ftdi_new();
+    CAM8B = ftdi_new();
+    if (ftdi_set_interface(CAM8A, INTERFACE_A)<0) fprintf(stderr,"libftdi error set interface A\n");
+    if (ftdi_set_interface(CAM8B, INTERFACE_B)<0) fprintf(stderr,"libftdi error set interface B\n");
+	if (ftdi_usb_open(CAM8A, 0x0403, 0x6010)<0) fprintf(stderr,"libftdi error open interface A\n");
+	if (ftdi_usb_open(CAM8B, 0x0403, 0x6010)<0) fprintf(stderr,"libftdi error open interface B\n");
 
 // BitBang channel 2
-    if (FT_SetBitMode(CAM8B, 0xFF, 0x01) != 0) {fprintf(stderr, "ftdi_set_bitmode 2 failed\n");exit(-1);}
+    if (ftdi_set_bitmode(CAM8B, 0xFF, BITMODE_BITBANG)<0) fprintf(stderr,"libftdi error set bitbang mode interface B\n");
 
 // Baudrate
-    spusb = 1600000;
-    ms1 = spusb / 8000;
-    FT_Current_Baud = spusb;
-    if (FT_SetBaudRate(CAM8B ,FT_Current_Baud) != 0) {fprintf(stderr, "ftdi_set_baudrate 2 failed\n");exit(-1);}
+    cameraSetBaudrate(150);
 
-    FT_SetLatencyTimer(CAM8A,20);
-    FT_SetLatencyTimer(CAM8B,20);
+    if (ftdi_set_latency_timer(CAM8A,20)<0) fprintf(stderr,"libftdi error set latency interface A\n");
+    if (ftdi_set_latency_timer(CAM8B,20)<0) fprintf(stderr,"libftdi error set latency interface B\n");;
 
 //timeouts
-    FT_SetTimeouts(CAM8A,12000,12000);
-    FT_SetTimeouts(CAM8B,12000,12000);
+    CAM8A->usb_read_timeout=120000;
+    CAM8A->usb_read_timeout=120000;
+    CAM8B->usb_write_timeout=120000;
+    CAM8B->usb_write_timeout=120000;
 
 //Purge
-    FT_Purge(CAM8A,FT_PURGE_RX);
-    FT_Purge(CAM8B,FT_PURGE_RX);
-    FT_Purge(CAM8A,FT_PURGE_TX);
-    FT_Purge(CAM8B,FT_PURGE_TX);
+	if (ftdi_usb_purge_rx_buffer(CAM8A)<0) fprintf(stderr,"libftdi error purge RX interface A\n");
+	if (ftdi_usb_purge_tx_buffer(CAM8A)<0) fprintf(stderr,"libftdi error purge TX interface A\n");
+	if (ftdi_usb_purge_rx_buffer(CAM8B)<0) fprintf(stderr,"libftdi error purge RX interface B\n");
+	if (ftdi_usb_purge_tx_buffer(CAM8B)<0) fprintf(stderr,"libftdi error purge TX interface B\n");
 
     AD9822(0,0x58);
     AD9822(1,0xA0);
@@ -639,8 +601,8 @@ FT_OP_flag = true;
     AD9822(3,34);
     adress=0;
     HC595(0xCF);
-    ftStatus=FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten);
-    if ( ftStatus!= FT_OK) fprintf(stderr,"write failed on channel 2 (%d)\n",ftStatus);
+//    ftStatus=FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten);
+    if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
 
   isConnected = FT_OP_flag;
   errorReadFlag = false;
@@ -655,8 +617,11 @@ FT_OP_flag = true;
 bool cameraDisconnect(void)               /*stdcall; export;*/
 {
     bool FT_OP_flag;
-    FT_Close(CAM8A);
-    FT_Close(CAM8B);
+    ftdi_disable_bitbang(CAM8B);
+    ftdi_usb_close(CAM8B);
+    ftdi_free(CAM8B);
+    ftdi_usb_close(CAM8A);
+    ftdi_free(CAM8A);
     return true;
 }
 
@@ -698,7 +663,8 @@ int cameraStartExposure (int Bin,int StartX,int StartY,int NumX,int NumY, double
   {
     adress=0;
     shift3();
-    if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+//    if (FT_Write(CAM8B, FT_Out_Buffer, adress,&bytesWritten) != 0) fprintf(stderr,"write failed on channel 2)\n");
+    if (ftdi_write_data(CAM8B, FT_Out_Buffer, adress) < 0 ) fprintf(stderr,"write failed on channel 2)\n");
 
     pthread_t te,tt;
     pthread_create(&te, NULL, ExposureTimerTick, NULL);
@@ -790,12 +756,15 @@ bool cameraSetBaudrate(int val)                   /*stdcall; export;*/
 {
 bool Result;
   /*setup FT2232 baud rate*/
-  if ((val>=80) & (val<=240))
+  if ((val>=80) & (val<=150))
   {
     spusb = val*10000;
     ms1 = spusb / 8000;
     FT_Current_Baud = spusb;
-    if (FT_SetBaudRate(CAM8B ,FT_Current_Baud) != 0) {fprintf(stderr, "ftdi_set_baudrate 2 failed\n");exit(-1);}
+//    if (FT_SetBaudRate(CAM8B ,FT_Current_Baud) != 0) {fprintf(stderr, "ftdi_set_baudrate 2 failed\n");exit(-1);}
+//    ftdi_set_baudrate(CAM8B,FT_Current_Baud);
+    ftdi_result=ftdi_set_baudrate(CAM8B,FT_Current_Baud);
+    if (ftdi_result<0) fprintf(stderr,"libftdi error set baud interface B (%d:%s)\n",ftdi_result,ftdi_get_error_string(CAM8B));
     Result = true;
   }
   else Result = false;

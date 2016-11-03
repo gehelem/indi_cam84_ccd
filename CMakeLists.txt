@@ -19,10 +19,8 @@ add_library(cam84 libcam84.c)
 find_package(CFITSIO REQUIRED)
 find_package(INDI REQUIRED)
 find_package(ZLIB REQUIRED)
-#find_package ( LibFTDI1 NO_MODULE REQUIRED )
-#find_package(libFTD2XX)
-#DLIBFTD2XX_LIBRARIES=/usr/local/lib
-#include ( ${LIBFTDI_USE_FILE} )
+find_package ( LibFTDI1 NO_MODULE REQUIRED )
+include ( ${LIBFTDI_USE_FILE} )
 
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake ${CMAKE_CURRENT_BINARY_DIR}/config.h )
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/indi_cam84_ccd.xml.cmake ${CMAKE_CURRENT_BINARY_DIR}/indi_cam84_ccd.xml )
@@ -44,8 +42,7 @@ set(cam84ccd_SRCS
 
 add_executable(indi_cam84_ccd ${cam84ccd_SRCS})
 
-#target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARY} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
-target_link_libraries(indi_cam84_ccd cam84 /usr/local/lib/libftd2xx.so ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
 
 install(TARGETS indi_cam84_ccd RUNTIME DESTINATION bin)
 
