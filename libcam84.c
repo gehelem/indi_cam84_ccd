@@ -296,12 +296,12 @@ readFailed=false;
 		
 //      ftStatus=FT_Read(CAM8A, FT_In_Buffer, 8*mdeltX, &dwBytesRead);
 	  dwBytesRead=ftdi_read_data(CAM8A,FT_In_Buffer, 8*mdeltX);
-      if (dwBytesRead < 0) fprintf(stderr,"FT_Read failed (%d)\n",dwBytesRead);
+      if (dwBytesRead < 0) fprintf(stderr,"ftdi_read_data failed (%d)\n",dwBytesRead);
 
       if (dwBytesRead!=8*mdeltX)
       {
         readFailed=true;
-        fprintf(stderr,"poseExecute bin==1 readfailed %d<>%d - %d / %d \n",dwBytesRead,8*mdeltX,y,mYn+mdeltY-1);
+        fprintf(stderr,"ftdi_read_data readfailed %d<>%d - %d / %d - ms1 = %f baud = %d\n",dwBytesRead,8*mdeltX,y,mYn+mdeltY-1,ms1,FT_Current_Baud);
         break;
       }
 
@@ -365,8 +365,7 @@ uint8_t dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28
   cameraState = cameraReading;
   if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
   if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
-  ftdi_usb_purge_rx_buffer(CAM8A);
-  ftdi_usb_purge_tx_buffer(CAM8B);
+
   adress=0;
 
   if (expoz > 52)
@@ -577,10 +576,11 @@ bool cameraConnect()               /*stdcall; export;*/
     if (ftdi_set_bitmode(CAM8B, 0xFF, BITMODE_BITBANG)<0) fprintf(stderr,"libftdi error set bitbang mode interface B\n");
 
 // Baudrate
-    cameraSetBaudrate(150);
+    cameraSetBaudrate(240);
 
 //timeouts - latency
-    cameraSetLibftdiTimers(2,12000);
+    cameraSetLibftdiTimeouts(12000);
+    cameraSetLibftdiLatency(2);
 
 
 //Purge
@@ -601,7 +601,9 @@ bool cameraConnect()               /*stdcall; export;*/
 
   isConnected = FT_OP_flag;
   errorReadFlag = false;
+    cameraSetGain(0);
   cameraState = cameraIdle;
+
   if(FT_OP_flag==false)  cameraState = cameraError;
   return isConnected;
 }
@@ -750,30 +752,37 @@ int cameraGetError()           /*stdcall; export;*/
 bool cameraSetBaudrate(int val)                   /*stdcall; export;*/
 {
 bool Result;
+fprintf(stderr,"libftdi baudrate before -  interface B %d (val:%d)\n",CAM8B->baudrate,val);
   /*setup FT2232 baud rate*/
-  if ((val>=80) & (val<=150))
+  if ((val>=80) & (val<=240))
   {
     spusb = val*10000;
-    ms1 = spusb / 8000;
+    //spusb = CAM8B->baudrate;
+    ms1 = 1 * spusb / 8000;
     FT_Current_Baud = spusb;
-//    if (FT_SetBaudRate(CAM8B ,FT_Current_Baud) != 0) {fprintf(stderr, "ftdi_set_baudrate 2 failed\n");exit(-1);}
-//    ftdi_set_baudrate(CAM8B,FT_Current_Baud);
-    ftdi_result=ftdi_set_baudrate(CAM8B,FT_Current_Baud);
+    fprintf(stderr,"libftdi baudrate during -  interface B %d\n",FT_Current_Baud);
+    ftdi_result=ftdi_set_baudrate(CAM8B,FT_Current_Baud/4);
     if (ftdi_result<0) fprintf(stderr,"libftdi error set baud interface B (%d:%s)\n",ftdi_result,ftdi_get_error_string(CAM8B));
     Result = true;
   }
   else Result = false;
+fprintf(stderr,"libftdi baudrate after  -  interface B %d\n",CAM8B->baudrate);
   return Result;
 }
 
-bool cameraSetLibftdiTimers(int lat, int timers)
+bool cameraSetLibftdiLatency(int lat)
 {
     if (ftdi_set_latency_timer(CAM8A,lat)<0) fprintf(stderr,"libftdi error set latency interface A\n");
     if (ftdi_set_latency_timer(CAM8B,lat)<0) fprintf(stderr,"libftdi error set latency interface B\n");
-    CAM8A->usb_read_timeout=timers;
-    CAM8A->usb_read_timeout=timers;
-    CAM8B->usb_write_timeout=timers;
-    CAM8B->usb_write_timeout=timers;
+    return true;
+}
+
+bool cameraSetLibftdiTimeouts(int timeout)
+{
+    CAM8A->usb_read_timeout=timeout;
+    CAM8A->usb_read_timeout=timeout;
+    CAM8B->usb_write_timeout=timeout;
+    CAM8B->usb_write_timeout=timeout;
     return true;
 }
 

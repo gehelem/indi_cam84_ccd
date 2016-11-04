@@ -116,13 +116,13 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             return true;
         }
 
-        if (!strcmp(name, LibftditimersNP.name))
+        if (!strcmp(name, LibftditimeoutsNP.name))
         {
-            IUUpdateNumber(&LibftditimersNP, values, names, n);
-            LibftditimersNP.s = IPS_OK;
-            IDSetNumber(&LibftditimersNP, NULL);
-            cameraSetLibftdiTimers(LibftdilatencyN[0].value,LibftditimersN[0].value);
-            IDMessage(getDeviceName(), "Cam84 set libftdi timers = %d",(int) LibftditimersN[0].value);
+            IUUpdateNumber(&LibftditimeoutsNP, values, names, n);
+            LibftditimeoutsNP.s = IPS_OK;
+            IDSetNumber(&LibftditimeoutsNP, NULL);
+            cameraSetLibftdiTimeouts(LibftditimeoutsN[0].value);
+            IDMessage(getDeviceName(), "Cam84 set libftdi timeouts = %d",(int) LibftditimeoutsN[0].value);
             return true;
         }
 
@@ -131,7 +131,7 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             IUUpdateNumber(&LibftdilatencyNP, values, names, n);
             LibftdilatencyNP.s = IPS_OK;
             IDSetNumber(&LibftdilatencyNP, NULL);
-            cameraSetLibftdiTimers(LibftdilatencyN[0].value,LibftditimersN[0].value);
+            cameraSetLibftdiLatency(LibftdilatencyN[0].value);
             IDMessage(getDeviceName(), "Cam84 set libftdi latency = %d",(int) LibftdilatencyN[0].value);
             return true;
         }
@@ -162,10 +162,8 @@ bool Cam84CCD::Connect()
 
     // Let's set a timer that checks teleCCDs status every POLLMS milliseconds.
     SetTimer(POLLMS);
-    //cameraSetBaudrate(80);
+
     cameraConnect();
-    cameraSetBaudrate(80);
-//    cameraSetOffset(100);
     IDMessage(getDeviceName(), "Cam84 connected successfully!");
 
     return true;
@@ -206,7 +204,7 @@ bool Cam84CCD::initProperties()
     const short maxBaudrate = 240;*/
 
     /* Add Gain number property (gs) */
-    IUFillNumber(GainN, "GAIN", "Gain", "%g", 0, 63, 1, 32);
+    IUFillNumber(GainN, "GAIN", "Gain", "%g", 0, 63, 1, 0);
     IUFillNumberVector(&GainNP, GainN, 1, getDeviceName(),"GAIN",
                        "Gain", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
@@ -216,7 +214,7 @@ bool Cam84CCD::initProperties()
                        "Offset", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Baudrate number property (gs) */
-    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", 80, 150, 10, 150);
+    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", 80, 240, 10, 240);
     IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
@@ -226,8 +224,8 @@ bool Cam84CCD::initProperties()
                        "Latency", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Tiemrs number property (gs) */
-    IUFillNumber(LibftditimersN, "TIMERS", "Timers", "%g", 1000, 50000, 1000, 2000);
-    IUFillNumberVector(&LibftditimersNP, LibftditimersN, 1, getDeviceName(),"TIMERS",
+    IUFillNumber(LibftditimeoutsN, "TIMERS", "Timers", "%g", 1000, 50000, 1000, 2000);
+    IUFillNumberVector(&LibftditimeoutsNP, LibftditimeoutsN, 1, getDeviceName(),"TIMERS",
                        "Timers", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
 
@@ -263,7 +261,7 @@ bool Cam84CCD::updateProperties()
         defineNumber(&GainNP);
         defineNumber(&OffsetNP);
         defineNumber(&BaudrateNP);
-        defineNumber(&LibftditimersNP);
+        defineNumber(&LibftditimeoutsNP);
         defineNumber(&LibftdilatencyNP);
     }
     else
@@ -271,7 +269,7 @@ bool Cam84CCD::updateProperties()
         deleteProperty(GainNP.name);
         deleteProperty(OffsetNP.name);
         deleteProperty(BaudrateNP.name);
-        deleteProperty(LibftditimersNP.name);
+        deleteProperty(LibftditimeoutsNP.name);
         deleteProperty(LibftdilatencyNP.name);
     }
 
@@ -305,7 +303,7 @@ bool Cam84CCD::StartExposure(float duration)
     // Since we have only have one CCD with one chip, we set the exposure duration of the primary CCD
     PrimaryCCD.setExposureDuration(duration);
     //cameraStartExposure(1,0,0,3000,2000, duration,true);
-    int r = cameraStartExposure(1,0,0,3000,2000, duration, false);
+    int r = cameraStartExposure(1,0,0,3000,2000, duration, true);
     //int r = cameraStartExposure(1,0,0,3000,2000, 0.4, true);
     gettimeofday(&ExpStart,NULL);
 

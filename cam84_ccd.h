@@ -69,8 +69,8 @@ private:
     INumber BaudrateN[1];
     INumberVectorProperty BaudrateNP;
 
-    INumber LibftditimersN[1];
-    INumberVectorProperty LibftditimersNP;
+    INumber LibftditimeoutsN[1];
+    INumberVectorProperty LibftditimeoutsNP;
 
     INumber LibftdilatencyN[1];
     INumberVectorProperty LibftdilatencyNP;
