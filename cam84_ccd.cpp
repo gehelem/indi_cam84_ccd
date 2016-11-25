@@ -252,22 +252,22 @@ bool Cam84CCD::initProperties()
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Latency number property (gs) */
-    IUFillNumber(LibftdilatencyAN, "LATENCYA", "LatencyA", "%g", 2, 10, 2, CAM84_LATENCYA);
+    IUFillNumber(LibftdilatencyAN, "LATENCYA", "LatencyA", "%g", 1, 50, 1, CAM84_LATENCYA);
     IUFillNumberVector(&LibftdilatencyANP, LibftdilatencyAN, 1, getDeviceName(),"LATENCYA",
                        "LatencyA", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add timers number property (gs) */
-    IUFillNumber(LibftditimerAN, "TIMERA", "TimerA", "%g", 1000, 90000, 1000, CAM84_TIMERA);
+    IUFillNumber(LibftditimerAN, "TIMERA", "TimerA", "%g", 1000, 20000000, 1000, CAM84_TIMERA);
     IUFillNumberVector(&LibftditimerANP, LibftditimerAN, 1, getDeviceName(),"TIMERA",
                        "TimerA", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Latency number property (gs) */
-    IUFillNumber(LibftdilatencyBN, "LATENCYB", "LatencyB", "%g", 2, 10, 2, CAM84_LATENCYB);
+    IUFillNumber(LibftdilatencyBN, "LATENCYB", "LatencyB", "%g", 1, 50, 1, CAM84_LATENCYB);
     IUFillNumberVector(&LibftdilatencyBNP, LibftdilatencyBN, 1, getDeviceName(),"LATENCYB",
                        "LatencyB", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add timers number property (gs) */
-    IUFillNumber(LibftditimerBN, "TIMERB", "TimerB", "%g",  1000, 90000, 1000, CAM84_TIMERB);
+    IUFillNumber(LibftditimerBN, "TIMERB", "TimerB", "%g",  1000, 150000, 1000, CAM84_TIMERB);
     IUFillNumberVector(&LibftditimerBNP, LibftditimerBN, 1, getDeviceName(),"TIMERB",
                        "TimerB", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
@@ -489,8 +489,8 @@ void Cam84CCD::grabImage()
    while (!cameraGetImageReady() ); // waiting image
    if (PrimaryCCD.getBinX()==1) 
    {
-   for (int j=0; j < height ; j++)
-     for (int i=0; i < width/2; i++)
+   for (int j=PrimaryCCD.getSubY(); j < height + PrimaryCCD.getSubY(); j++)
+     for (int i=PrimaryCCD.getSubX(); i < (PrimaryCCD.getSubX()+width)/2; i++)
          {
             uint16_t pix = cameraGetImage(i,j);
             uint8_t hibyte = (pix & 0xff00) >> 8;

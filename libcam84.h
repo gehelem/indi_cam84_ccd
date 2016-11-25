@@ -6,8 +6,9 @@
 #define CAM84_OFFSET    0
 #define CAM84_LATENCYA  4
 #define CAM84_LATENCYB  4
-#define CAM84_TIMERA    90000
+#define CAM84_TIMERA    24000
 #define CAM84_TIMERB    24000
+//#define D2XX
 
 
 #ifdef __cplusplus
