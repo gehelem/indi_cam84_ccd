@@ -1,13 +1,13 @@
 #ifndef __LIBCAM84_H__
 #define __LIBCAM84_H__
 
-#define CAM84_BAUDRATE  140
+#define CAM84_BAUDRATE  150
 #define CAM84_GAIN      0
 #define CAM84_OFFSET    0
-#define CAM84_LATENCYA  4
-#define CAM84_LATENCYB  4
-#define CAM84_TIMERA    24000
-#define CAM84_TIMERB    24000
+#define CAM84_LATENCYA  1
+#define CAM84_LATENCYB  1
+#define CAM84_TIMERA    2400
+#define CAM84_TIMERB    2400
 //#define D2XX
 
 
