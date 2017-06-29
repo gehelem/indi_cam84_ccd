@@ -42,7 +42,7 @@ set(cam84ccd_SRCS
 
 add_executable(indi_cam84_ccd ${cam84ccd_SRCS})
 
-target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARIES} /usr/local/lib/libftd2xx.so ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
 
 install(TARGETS indi_cam84_ccd RUNTIME DESTINATION bin)
 
