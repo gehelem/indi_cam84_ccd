@@ -166,6 +166,7 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             IDMessage(getDeviceName(), "Cam84 set libftdi latencyB = %d",(int) LibftdilatencyBN[0].value);            
 			return true;
         }
+		
 
     }
 
@@ -180,6 +181,19 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
 bool Cam84CCD::ISNewSwitch (const char *dev, const char *name,
                           ISState *states, char *names[], int n)
 {
+    if (!strcmp(dev, getDeviceName()))
+    {
+	
+		if (!strcmp(name, ContinuousADToggleP.name))
+        {
+            IUUpdateSwitch(&ContinuousADToggleP, states, names, n);
+			bool theToggle = (ContinuousADToggle[0].s==ISS_ON);
+            cameraSetContinuousADToggle(theToggle);
+            IDMessage(getDeviceName(), "Cam84 set ContinuousADToggle = %d\n", theToggle);
+			return true;
+        }
+
+	}
     return INDI::CCD::ISNewSwitch (dev, name, states, names,  n);
 }
 
@@ -270,6 +284,10 @@ bool Cam84CCD::initProperties()
     IUFillNumber(LibftditimerBN, "TIMERB", "TimerB", "%g",  1000, 150000, 1000, CAM84_TIMERB);
     IUFillNumberVector(&LibftditimerBNP, LibftditimerBN, 1, getDeviceName(),"TIMERB",
                        "TimerB", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+					   
+	/* Add property to set continous toggling of A/D to reduce noise */
+	IUFillSwitch(ContinuousADToggle,"ADTOGGLE", "AD_Continuous_Toggling", ISS_OFF);
+	IUFillSwitchVector(&ContinuousADToggleP, ContinuousADToggle, 1, getDeviceName(),"ADTOGGLE", "AD_Continuous_Toggling", MAIN_CONTROL_TAB, IP_RW, ISR_NOFMANY, 0, IPS_IDLE);
 
 
 
@@ -283,6 +301,7 @@ bool Cam84CCD::initProperties()
     addAuxControls();
 
     return true;
+
 
 }
 
@@ -309,6 +328,7 @@ bool Cam84CCD::updateProperties()
         defineNumber(&LibftdilatencyANP);
         defineNumber(&LibftditimerBNP);
         defineNumber(&LibftdilatencyBNP);
+		defineSwitch(&ContinuousADToggleP);
     }
     else
     {
@@ -319,6 +339,7 @@ bool Cam84CCD::updateProperties()
         deleteProperty(LibftdilatencyANP.name);
         deleteProperty(LibftditimerBNP.name);
         deleteProperty(LibftdilatencyBNP.name);
+		deleteProperty(ContinuousADToggleP.name);
     }
 
     return true;
@@ -329,7 +350,7 @@ bool Cam84CCD::updateProperties()
 ***************************************************************************************/
 void Cam84CCD::setupParams()
 {
-    // Our CCD is an 8 bit CCD, 1280x1024 resolution, with 5.4um square pixels.
+    // Cam84 is an 16 bit CCD, 3000x200 resolution, with 7.8 um square pixels.
     SetCCDParams(3000, 2000, 16, 7.8, 7.8);
 
     // Let's calculate how much memory we need for the primary CCD buffer
@@ -489,10 +510,12 @@ void Cam84CCD::grabImage()
    while (!cameraGetImageReady() ); // waiting image
    if (PrimaryCCD.getBinX()==1) 
    {
-   for (int j=PrimaryCCD.getSubY(); j < height + PrimaryCCD.getSubY(); j++)
-     for (int i=PrimaryCCD.getSubX(); i < (PrimaryCCD.getSubX()+width)/2; i++)
+	   int di = PrimaryCCD.getSubX();
+	   int dj = PrimaryCCD.getSubY();
+   for (int j=0; j < height ; j++)
+     for (int i=0; i < width/2; i++)
          {
-            uint16_t pix = cameraGetImage(i,j);
+            uint16_t pix = cameraGetImage(i+di,j+dj);
             uint8_t hibyte = (pix & 0xff00) >> 8;
             uint8_t lobyte = (pix & 0xff);
             image[2*i+  j*width] = hibyte;

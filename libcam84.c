@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-#include <sys/time.h>
+#include <time.h>
 #include "libcam84.h"
 #include "config.h"
 #include <unistd.h>
@@ -14,13 +14,12 @@
 struct timeval  curTime;
 
 
+
 // /*?????? ???????????*/
 const int CameraWidth = 3000;
 /*?????? ???????????*/
 const int CameraHeight = 2000;
 /*?????????????? ???????? ?? ??????? ????? BDBUS*/
-const uint8_t portfirst = 0xE1+8;
-const uint8_t portsecond = 0x91+8;
 const int xccd = 1500;
 const int yccd = 1000;
 const int dx = 44;//3044-2*xccd;
@@ -81,6 +80,10 @@ bool errorWriteFlag;
 double spusb;
 double ms1;
 
+//exposure start time
+struct timespec exposureStartTime, currentTime;
+double elapsedTime;
+
 void AD9822 ( uint8_t adr , uint16_t val );
 void HC595 ( uint8_t va );
 //static uint16_t FT_In_Buffer[6000];
@@ -108,6 +111,21 @@ int32_t   dwBytesRead  = 0;
 char *PORTA;
 char *PORTB;
 
+int  getImageImax;
+int  getImageImin;
+int  getImageJmax;
+int  getImageJmin;
+
+bool continougsADToggle = false;
+
+bool cameraSetContinuousADToggle(bool continuousADToggleValue)
+{
+	continougsADToggle = continuousADToggleValue;
+	fprintf(stderr,"continuousADToggle set to %d\n", continougsADToggle);
+}
+
+
+
 
 /* ????????? ????????? ?????? ? FT2232LH.*/
 /*?????? ???????????? ????? ?????:*/
@@ -122,36 +140,44 @@ char *PORTB;
 /*?????????? ????????? ?????? ???????? ??? ???????? ? ?????????? ????? val ?? ?????? adr ? ?????????? AD9822.*/
 /*???????? ???? ? ???????????????? ????.*/
 
+/*AD9822 uses FT2232H USB interface to write commands to the serial port of the AD9826 by writing a */
+/*parallel to serial conversion.  0x01 corresponds to SLOAD line, 0x02 corresponds to SCLK line, 0x04 corresponds to SDATA line */
+/*SCLK and SDATA also used by HC595 but with SL2 */
 void AD9822 ( uint8_t adr,uint16_t val )
 {
 //    fprintf(stderr,"AD9822 %d %d\n",adr,val);
   int kol = 64;
   uint8_t dan[kol];
   int i;
-  memset ( dan,portfirst,kol );
+  memset ( dan,0xE9,kol );		//set all 64 elements of dan to 0xE9			1110 1001
   for ( i = 1; i <= 32; i++ )
-    {
-      dan[i]=dan[i] & 0xFE;
-    };
+    {								//element 0, still 0xE9
+      dan[i]=dan[i] & 0xFE;			//sets elements 1 to 32 to 0xE8 = 0xE9 & 0xFE	1110 1000
+									//brings SL (SLOAD) low, i.e., active
+    };								//elements 33 to 63 and 0 are still 0xE9		
   for ( i = 0; i <= 15; i++ )
     {
-      dan[2*i+2]=dan[2*i+2] +2 ;
-    };
+      dan[2*i+2]=dan[2*i+2] + 2 ;	//sets elements 2, 4, ... 32 to 0xEA			1110 1010
+    };								//toggles SCK (SCLK) 16 times
+	
+  //convert adr to a 3 bit serial stream
   if ( ( adr & 4 ) ==4 )
     {
-      dan[3] =dan[3]+4;
-      dan[4] =dan[4]+4;
+      dan[3] =dan[3]+4;				//A2 bit										1110 1100
+      dan[4] =dan[4]+4;				//												1110 1110
     };
   if ( ( adr & 2 ) ==2 )
     {
-      dan[5] =dan[5]+4;
+      dan[5] =dan[5]+4;				//A1 bit
       dan[6] =dan[6]+4;
     };
   if ( ( adr & 1 ) ==1 )
     {
-      dan[7] =dan[7]+4;
+      dan[7] =dan[7]+4;				//A0 bit
       dan[8] =dan[8]+4;
     };
+	
+  //convert value to serial 9 bit stream
   if ( ( val & 256 ) ==256 )
     {
       dan[15]=dan[15]+4;
@@ -208,6 +234,13 @@ void AD9822 ( uint8_t adr,uint16_t val )
 
 /*?????????? ????????? ?????? ???????? ??? ???????? ????? val ?? ?????? ?????????? HC595.*/
 /*???????? ???? ? ???????????????? ????.*/
+
+/*HC595 stores commands in FT_OutBuffer for use with */
+/*FT2232H USB interface to write commands to the serial port of the 74HC595 by a */
+/*parallel to serial conversion.  74HC595 outputs as a parallel byte*/
+/*0x80 corresponds to SL2 line, 0x02 corresponds to SCLK line, 0x04 corresponds to SDATA line */
+/*SCLK and SDATA also used by HC595 but with SLOAD */
+/*74HC595 drives CXD1267 */
 void HC595 ( uint8_t va )
 {
 //fprintf(stderr,"HC595 %d \n",adress);
@@ -216,8 +249,8 @@ void HC595 ( uint8_t va )
   int i;
   uint16_t val;
 
-  memset ( dan,portfirst,kol );
-//for (i = 0;i < kol ;i++) dan[i]=portfirst;
+  memset ( dan,0xE9,kol );		//set all 20 elements of dan to 0xE9			1110 1001
+//for (i = 0;i < kol ;i++) dan[i]=0xE9;
   if ( zatv == 1 )
     {
       val=va+0x0100;
@@ -229,98 +262,110 @@ void HC595 ( uint8_t va )
   for ( i = 0; i <= 8; i++ )
     {
       dan[2*i+1]=dan[2*i+1] +2 ;
-      if ( ( val & 0x100 ) ==0x100 )
+      if ( ( val & 0x100 ) ==0x100 )		//High order bit is sent out first
         {
           dan[2*i  ]=dan[2*i]   + 4;
           dan[2*i+1]=dan[2*i+1] + 4;
         }
       val=val*2;
     };
-  dan[18]=dan[18]+ 0x80;
+  dan[18]=dan[18]+ 0x80;					//Toggle SL2 in dan18, latch data on rising edge at dan[19]
   for ( i = 0; i <= kol-1; i++ )
     {
-      FT_Out_Buffer[2*i+adress]  =dan[i];
-      FT_Out_Buffer[2*i+adress+1]=dan[i];
+      FT_Out_Buffer[2*i+adress]  =dan[i];	//adress is pointer into FT_Out_Buffer
+      FT_Out_Buffer[2*i+adress+1]=dan[i];	//two copies of each dan so data goes out half as fast??
     }
-  adress=adress+2*kol;
+  adress=adress+2*kol;						//increment adress to point to next open space in FT_Out_Buffer
 }
 
-void shift0()
-{
-//printf("shift0\n");
-  HC595 ( 0xDB );
-  HC595 ( 0xFA );
-  HC595 ( 0xEE );
-  HC595 ( 0xCF );
-}
+// /* Fast version of shift() but without overlap, not used? */
+// void shift0()
+// {
+// // printf("shift0\n");
+  // HC595 ( 0xDB );  // 1101 1011
+  // HC595 ( 0xFA );  // 1111 1010
+  // HC595 ( 0xEE );  // 1110 1110
+  // HC595 ( 0xCF );  // 1100 1111
+// }
 
 /*?????????? ????????? ?????? ???????? ??? ?????? ???? ????????????? ??????*/
-void shift()
+void shift()		//Shifts vertically one line
 {
 //printf("shift\n");
-  HC595 ( 0xCB );
-  HC595 ( 0xDB );
-  HC595 ( 0xDA );
-  HC595 ( 0xFA );
-  HC595 ( 0xEA );
-  HC595 ( 0xEE );
-  HC595 ( 0xCE );
-  HC595 ( 0xCF );
+  HC595 ( 0xCB );  // 1100 1011
+  HC595 ( 0xDB );  // 1101 1011
+  HC595 ( 0xDA );  // 1101 1010
+  HC595 ( 0xFA );  // 1111 1010
+  HC595 ( 0xEA );  // 1110 1010
+  HC595 ( 0xEE );  // 1110 1110
+  HC595 ( 0xCE );  // 1100 1110
+  HC595 ( 0xCF );  // 1100 1111
 }
 
 /*?????????? ????????? ?????? ???????? ??? "?????" ???????????? ??????????? ? ????????? ???????*/
-void shift2()
+void shift2()		//Toggles XSG1 and XSG2 portions of vertical shift logic
 {
 //printf("shift2\n");
   shift();
-  HC595 ( 0xC7 );
-  HC595 ( 0xC7 );
-  HC595 ( 0xC7 );
-  HC595 ( 0xC7 );
-  HC595 ( 0xCB );
-  HC595 ( 0xD9 );
-  HC595 ( 0xD9 );
-  HC595 ( 0xD9 );
-  HC595 ( 0xD9 );
-  HC595 ( 0xDB );
-  HC595 ( 0xFA );
-  HC595 ( 0xEA );
-  HC595 ( 0xEE );
-  HC595 ( 0xCE );
-  HC595 ( 0xCF );
+  HC595 ( 0xC7 );  // 1100 0111
+  HC595 ( 0xC7 );  // 1100 0111
+  HC595 ( 0xC7 );  // 1100 0111
+  HC595 ( 0xC7 );  // 1100 0111
+  HC595 ( 0xCB );  // 1100 1011
+  HC595 ( 0xD9 );  // 1101 1001
+  HC595 ( 0xD9 );  // 1101 1001
+  HC595 ( 0xD9 );  // 1101 1001
+  HC595 ( 0xD9 );  // 1101 1001
+  HC595 ( 0xDB );  // 1101 1011
+  HC595 ( 0xFA );  // 1111 1010
+  HC595 ( 0xEA );  // 1110 1010
+  HC595 ( 0xEE );  // 1110 1110
+  HC595 ( 0xCE );  // 1100 1110
+  HC595 ( 0xCF );  // 1100 1111
 }
 
 /*?????????? ????????? ?????? ???????? ??? ?????? ???? ????????????? ?????? + ?????? SUB ??? ?????? ??????? ???????????*/
-void shift3()
+void shift3()			//Similar to shift() but also toggles XSHT -> SUB -> VSUB on ICX453 CCD
 {
-  HC595 ( 0xCB );
-  HC595 ( 0xDB );
+  HC595 ( 0xCB );  // 1100 1011
+  HC595 ( 0xDB );  // 1101 1011
   /*SUB*/
-  HC595 ( 0x9A );
-  HC595 ( 0xBA );
-  HC595 ( 0xAA );
-  HC595 ( 0xEE );
-  HC595 ( 0xCE );
-  HC595 ( 0xCF );
+  HC595 ( 0x9A );  // 1001 1010
+  HC595 ( 0xBA );  // 1011 1010
+  HC595 ( 0xAA );  // 1010 1010
+  HC595 ( 0xEE );  // 1110 1110
+  HC595 ( 0xCE );  // 1100 1110
+  HC595 ( 0xCF );  // 1100 1111
 }
 
 void clearline2()
 {
-  uint8_t dout[4];
   int x;
-  dout[0]=portsecond;
-  dout[1]=portsecond+8;
-  dout[2]=portfirst+8;
-  dout[3]=portfirst;
-  for ( x=0; x <= 79*xccd; x ++ )
-    {
-      FT_Out_Buffer[adress+0]=dout[0]+0x40;
-      FT_Out_Buffer[adress+1]=dout[0];
-      FT_Out_Buffer[adress+2]=dout[3]-0x40;
-      FT_Out_Buffer[adress+3]=dout[3];
+//  for ( x=0; x <= 79*xccd; x ++ )  		//xccd = 1500 constant  
+  for ( x=0; x <= 8*xccd; x ++ )  		//xccd = 1500 constant  
+    {									//appends 4*(79*1500)+1 elements to FT_Out_Buffer
+      FT_Out_Buffer[adress+0]=0xD9;		//0xD9  1101 1001
+      FT_Out_Buffer[adress+1]=0x99;		//0x99	1001 1001
+      FT_Out_Buffer[adress+2]=0xA9;		//0xA9	1010 1001
+      FT_Out_Buffer[adress+3]=0xE9;		//0xE9	1110 1001
       adress += 4;
     }
 }
+
+//Tickles clocks for AD without causing any shifts
+void preCharge(int nCycles)
+{
+  int x;
+  for ( x=0; x <= nCycles; x ++ )  				//xccd = 1500 constant
+    {											//appends ncycles elements to FT_Out_Buffer
+      FT_Out_Buffer[adress+0]=0xD9;		        //0xD9  1101 1001
+      FT_Out_Buffer[adress+1]=0xD9;			    //0xD9	1101 1001
+      FT_Out_Buffer[adress+2]=0xE9;		        //0xE9	1110 1001
+      FT_Out_Buffer[adress+3]=0xE9;			    //0xE9	1110 1001
+      adress += 4;
+    }
+}
+
 
 /*?????????? ????????? ?????? ???????? ???:*/
 /*??????? ?????????? ????????. ???? ??? ?? ????????,*/
@@ -329,12 +374,36 @@ void clearline2()
 /*???????? ?????????? ????? "??????" ??????????? ? ????????? ???????*/
 void clearframe()
 {
+  fprintf(stderr,"clearframe started\n");
+ 
   uint16_t y;
-  for ( y=0; y <= 1012-1; y ++ )
+  uint16_t x;
+  
+  fprintf(stderr,"Previous imin = %d, imax = %d, jmin = %d, jmax = %d for getImage(i,j)\n",getImageImin, getImageImax, getImageJmin, getImageJmax);
+  
+  getImageImax = -1;
+  getImageImin = 99999;
+  getImageJmax = -1;
+  getImageJmin = 999999;
+  
+  for ( x=0; x < 3000; x ++) {	  //clear image buffer (or set to test value)
+    for ( y=0; y < 2000; y ++ ){  
+		bufim[x][y] = 0;
+	}
+  }
+
+
+  
+  clearline2();
+  for ( x=0; x < 1; x ++) {  //See if multiple clears help
+  for ( y=0; y <= 1012-1; y ++ )  //calls shift 1012 times followed by clearline2
     {
       shift();
     }
   clearline2();
+  }
+  
+  fprintf(stderr,"clearframe complete\n");
 }
 
 /* ?????? ?????????????? ?????????? ?????? FT2232HL ? ???????? ?????? ???????????*/
@@ -342,18 +411,18 @@ void clearframe()
 /*?????????? ????? ??? int32, ? ?? word16 ??-?? ???????????? ??? ??????????? ?????????*/
 
 /*?????????? ???? ?????? ??????? ????? ???? ADBUS*/
-void *posExecute ( void *arg )
+void *posExecute ( void *arg )	//Thread assembles data read from AD and places it in the image buffer
 {
 //printf("poseExecute\n");
   uint16_t x,y,x1,byteCnt;
   bool readFailed;
-//fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
+fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
 //fprintf(stderr,"poseexecute y : %d>%d x : %d>%d\n",mYn,mYn+mdeltY-1,0,mdeltX - 1);
 //for (x=0;x<13000;x++) FT_In_Buffer[x]=0;
   //canWrite=true;
   readFailed=false;
   byteCnt=0;
-  for ( y= mYn; y <= mYn+mdeltY-1; y ++ )
+  for ( y= mYn; y < mYn+mdeltY; y ++ )
     {
       if ( mBin == 1 )
         {
@@ -384,7 +453,7 @@ void *posExecute ( void *arg )
               //break;
             }
 
-          for ( x=0; x <= mdeltX - 1; x ++ )
+          for ( x=0; x < mdeltX; x ++ )
             {
               x1=x+mXn;
               bufim[2*x1][2*y]    =1*FT_In_Buffer[ ( 4*x ) *2]+256*FT_In_Buffer[ ( 4*x ) *2+1];
@@ -408,7 +477,7 @@ void *posExecute ( void *arg )
               fprintf ( stderr,"poseExecute bin<>1 readfailed %d<>%d - %d / %d \n",dwBytesRead,2*mdeltX,y,mYn+mdeltY-1 );
               break;
             }
-          for ( x=0; x <= mdeltX - 1; x ++ )
+          for ( x=0; x < mdeltX ; x ++ )
             {
               x1=x+mXn;
               /*bufim[2*x1][2*y]=swap(FT_In_Buffer[x]);
@@ -451,12 +520,23 @@ void *posExecute ( void *arg )
 void readframe ( int bin,int expoz )
 {
   rfstatus = 0;
-  fprintf ( stderr,"reading : begin\n" );
-  uint8_t dout[5] = {portsecond,portsecond+8,portfirst+8,portfirst,portsecond+0x28};
+  fprintf ( stderr,"readframe(bin: %d, expoz: %d) : begin\n", bin, expoz );
   int x,y;
   cameraState = cameraReading;
   //if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
   //if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
+  
+  // fprintf ( stderr,"Pre-charging : begin\n" );
+   // adress=0;
+  // preCharge(100000);
+  // for ( x=0; x<100; x++) {
+   // if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+    // {
+      // fprintf ( stderr,"write failed on channel 2)\n" );
+    // }
+  // }
+  // fprintf ( stderr,"Pre-charging : done\n" );
+   
   adress=0;
 
   if ( expoz > 52 )
@@ -464,6 +544,7 @@ void readframe ( int bin,int expoz )
 
       if ( expoz < 500 )
         {
+		  clearframe();
           shift3();
           for ( y=0; y <= expoz-52; y ++ )
             for ( x=0; x <= ms1-1; x ++ )
@@ -471,21 +552,25 @@ void readframe ( int bin,int expoz )
                 HC595 ( 0xCF );
               }
         }
-      clearline2();
-      clearframe();
+
+        clearframe();
     }
   else
     {
-      clearline2();
+//     fprintf(stderr,"ExpozElse\n");
+
       clearframe();
       shift3();
       if ( expoz > 0 )
+{
+//        fprintf(stderr,"ExpozElse\n");
         for ( y=0; y <= expoz; y ++ )
           for ( x=0; x <= ms1-1; x ++ )
             {
               HC595 ( 0xCF );
             }
     }
+}
 
 
   shift2();
@@ -494,7 +579,8 @@ void readframe ( int bin,int expoz )
       fprintf ( stderr,"write failed on channel 2)\n" );
     }
   adress=0;
-  for ( y=0; y <= dy-1+mYn; y ++ )
+  fprintf(stderr,"shifting %d + %d times\n", dy, mYn);
+  for ( y=0; y < dy+mYn; y ++ )  //Shift by dy (some constant and by number of lines to skip
     {
       shift();
     }
@@ -509,42 +595,45 @@ void readframe ( int bin,int expoz )
   pthread_create ( &t1, NULL, posExecute, NULL );
   //pthread_detach(t1);
 
-  for ( y=0; y <= mdeltY -1; y ++ )
+  fprintf( stderr,"mdeltX: %6d, mdeltaY: %6d, mXn %6d, mYn %6d, dx %6d, dy %6d, dx2 %6d  \n", mdeltX, mdeltY, mXn, mYn, dx, dy, dx2);
+  fprintf( stderr,"L1: %6d, L3: %6d, L4 %6d \n\n", dx+4*mXn, 4*mdeltX-2, dx2+6000-4*mdeltX-4*mXn);
+  
+  for ( y=0; y < mdeltY ; y ++ )					//Loops number of ypixels/2 in requested image
     {
       adress=0;
-      shift();
-      for ( x=0; x <= dx-1+4*mXn; x ++ )
+      shift();										//Shift one vertical line
+      for ( x=0; x < dx+4*mXn; x ++ )			//L1
         {
-          FT_Out_Buffer[adress+0]=dout[0]+0x40;
-          FT_Out_Buffer[adress+1]=dout[0];
-          FT_Out_Buffer[adress+2]=dout[3]-0x40;
-          FT_Out_Buffer[adress+3]=dout[3];
+          FT_Out_Buffer[adress+0]=0xD9;
+          FT_Out_Buffer[adress+1]=0x99;
+          FT_Out_Buffer[adress+2]=0xA9;
+          FT_Out_Buffer[adress+3]=0xE9;
           adress += 4;
         }
       if ( bin == 1 )
         {
           for ( x=0; x <= 4; x ++ )
             {
-              FT_Out_Buffer[adress+0]=dout[0]+0x40;
-              FT_Out_Buffer[adress+1]=dout[0];
-              FT_Out_Buffer[adress+2]=dout[3]-0x40;
-              FT_Out_Buffer[adress+3]=dout[3];
+              FT_Out_Buffer[adress+0]=0xD9;
+              FT_Out_Buffer[adress+1]=0x99;
+              FT_Out_Buffer[adress+2]=0xA9;
+              FT_Out_Buffer[adress+3]=0xE9;
               adress += 4;
             }
 
-          FT_Out_Buffer[adress+0]=dout[0]+0x40;
-          FT_Out_Buffer[adress+1]=dout[0];
-          FT_Out_Buffer[adress+2]=dout[3]-0x40;
-          FT_Out_Buffer[adress+3]=dout[3]-8;
+          FT_Out_Buffer[adress+0]=0xD9;
+          FT_Out_Buffer[adress+1]=0x99;
+          FT_Out_Buffer[adress+2]=0xA9;
+          FT_Out_Buffer[adress+3]=0xE1;				//Toggle WR#1
           adress += 4;
-          for ( x=0; x <= 4*mdeltX-2; x ++ )
+          for ( x=0; x <= 4*mdeltX-2; x ++ )				//L3
             {
-              FT_Out_Buffer[adress+0]=dout[0]+0x40;
-              FT_Out_Buffer[adress+1]=dout[0];
-              FT_Out_Buffer[adress+2]=dout[0]-8;
-              FT_Out_Buffer[adress+3]=dout[3]-0x40;
-              FT_Out_Buffer[adress+4]=dout[3];
-              FT_Out_Buffer[adress+5]=dout[3]-8;
+              FT_Out_Buffer[adress+0]=0xD9;
+              FT_Out_Buffer[adress+1]=0x99;
+              FT_Out_Buffer[adress+2]=0x91;			//Toggle WR#1
+              FT_Out_Buffer[adress+3]=0xA9;
+              FT_Out_Buffer[adress+4]=0xE9;
+              FT_Out_Buffer[adress+5]=0xE1;			//Toggle WR#1
               adress += 6;
             }
         }
@@ -552,55 +641,55 @@ void readframe ( int bin,int expoz )
         {
           for ( x=0; x <= 4; x ++ )
             {
-              FT_Out_Buffer[adress+0]=dout[0]+0x40;
-              FT_Out_Buffer[adress+1]=dout[0];
-              FT_Out_Buffer[adress+2]=dout[0]+0x40;
-              FT_Out_Buffer[adress+3]=dout[0];
-              FT_Out_Buffer[adress+4]=dout[0]+0x40;
-              FT_Out_Buffer[adress+5]=dout[0];
-              FT_Out_Buffer[adress+6]=dout[0]+0x40;
-              FT_Out_Buffer[adress+7]=dout[0];
-              FT_Out_Buffer[adress+8]=dout[3];
-              FT_Out_Buffer[adress+9]=dout[3];
+              FT_Out_Buffer[adress+0]=0xD9;
+              FT_Out_Buffer[adress+1]=0x99;
+              FT_Out_Buffer[adress+2]=0xD9;
+              FT_Out_Buffer[adress+3]=0x99;
+              FT_Out_Buffer[adress+4]=0xD9;
+              FT_Out_Buffer[adress+5]=0x99;
+              FT_Out_Buffer[adress+6]=0xD9;
+              FT_Out_Buffer[adress+7]=0x99;
+              FT_Out_Buffer[adress+8]=0xE9;
+              FT_Out_Buffer[adress+9]=0xE9;
               adress += 10;
             }
-          FT_Out_Buffer[adress+0]=dout[0]+0x40;
-          FT_Out_Buffer[adress+1]=dout[0];
-          FT_Out_Buffer[adress+2]=dout[0]+0x40;
-          FT_Out_Buffer[adress+3]=dout[0];
-          FT_Out_Buffer[adress+4]=dout[0]+0x40;
-          FT_Out_Buffer[adress+5]=dout[0];
-          FT_Out_Buffer[adress+6]=dout[0]+0x40;
-          FT_Out_Buffer[adress+7]=dout[0];
-          FT_Out_Buffer[adress+8]=dout[3];
-          FT_Out_Buffer[adress+9]=dout[3]-8;
+          FT_Out_Buffer[adress+0]=0xD9;
+          FT_Out_Buffer[adress+1]=0x99;
+          FT_Out_Buffer[adress+2]=0xD9;
+          FT_Out_Buffer[adress+3]=0x99;
+          FT_Out_Buffer[adress+4]=0xD9;
+          FT_Out_Buffer[adress+5]=0x99;
+          FT_Out_Buffer[adress+6]=0xD9;
+          FT_Out_Buffer[adress+7]=0x99;
+          FT_Out_Buffer[adress+8]=0xE9;
+          FT_Out_Buffer[adress+9]=0xE1;				//Toggle WR#1
           adress += 10;
           for ( x=0; x <= mdeltX-2; x ++ )
             {
-              FT_Out_Buffer[adress+0]=dout[0]+0x40;
-              FT_Out_Buffer[adress+1]=dout[0]-8;
-              FT_Out_Buffer[adress+2]=dout[0]+0x40;
-              FT_Out_Buffer[adress+3]=dout[0];
-              FT_Out_Buffer[adress+4]=dout[0]+0x40;
-              FT_Out_Buffer[adress+5]=dout[0];
-              FT_Out_Buffer[adress+6]=dout[0]+0x40;
-              FT_Out_Buffer[adress+7]=dout[0];
-              FT_Out_Buffer[adress+8]=dout[3];
-              FT_Out_Buffer[adress+9]=dout[3]-8;
+              FT_Out_Buffer[adress+0]=0xD9;
+              FT_Out_Buffer[adress+1]=0x91;			//Toggle WR#1
+              FT_Out_Buffer[adress+2]=0xD9;
+              FT_Out_Buffer[adress+3]=0x99;
+              FT_Out_Buffer[adress+4]=0xD9;
+              FT_Out_Buffer[adress+5]=0x99;
+              FT_Out_Buffer[adress+6]=0xD9;
+              FT_Out_Buffer[adress+7]=0x99;
+              FT_Out_Buffer[adress+8]=0xE9;
+              FT_Out_Buffer[adress+9]=0xE1;			//Toggle WR#1
               adress += 10;
             }
         }
-      FT_Out_Buffer[adress+0]=dout[0]+0x40;
-      FT_Out_Buffer[adress+1]=dout[0]-8;
-      FT_Out_Buffer[adress+2]=dout[3]-0x40;
-      FT_Out_Buffer[adress+3]=dout[3];
+      FT_Out_Buffer[adress+0]=0xD9;
+      FT_Out_Buffer[adress+1]=0x91;					//Toggle WR#1
+      FT_Out_Buffer[adress+2]=0xA9;
+      FT_Out_Buffer[adress+3]=0xE9;
       adress += 4;
-      for ( x=0; x <= dx2-1+6000-4*mdeltX-4*mXn; x ++ )
+      for ( x=0; x <= dx2-1+6000-4*mdeltX-4*mXn; x ++ ) //L4   ??Shift through rest of line?
         {
-          FT_Out_Buffer[adress+0]=dout[0]+0x40;
-          FT_Out_Buffer[adress+1]=dout[0];
-          FT_Out_Buffer[adress+2]=dout[3]-0x40;
-          FT_Out_Buffer[adress+3]=dout[3];
+          FT_Out_Buffer[adress+0]=0xD9;
+          FT_Out_Buffer[adress+1]=0x99;
+          FT_Out_Buffer[adress+2]=0xA9;
+          FT_Out_Buffer[adress+3]=0xE9;
           adress += 4;
         }
 
@@ -622,7 +711,7 @@ void readframe ( int bin,int expoz )
   pthread_join ( t1,NULL );
   imageReady = true;
   cameraState=cameraIdle;
-  fprintf ( stderr,"reading : end\n" );
+  fprintf ( stderr,"readframe : end\n" );
 
 }
 
@@ -630,17 +719,43 @@ void *ExposureTimerTick ( void *arg )  /*stdcall;*/
 {
   uint32_t dd;
   dd = ( durat*1000-52 ) *1000;
-  usleep ( dd );
+//  usleep ( dd );
+  elapsedTime = -1.0;
+  while(elapsedTime < durat)  //may need to subtract an offset
+  {
+//   fprintf(stderr,">>>ExposureTimerTick\n");
+   if(continougsADToggle) 
+   {
+		adress = 0;
+		preCharge(10000);
+		for (int x=0; x<1; x++) {
+			if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+				{
+					fprintf ( stderr,"write failed on channel 2)\n" );
+				}
+		}
+	}
+	else
+	{
+		usleep(10000);
+	}
+	clock_gettime(CLOCK_MONOTONIC, &currentTime);
+	elapsedTime = (currentTime.tv_sec - exposureStartTime.tv_sec) + (currentTime.tv_nsec - exposureStartTime.tv_nsec)*1.0e-9;
+	//fprintf(stderr,"Elapsed Time: %f, Duration: %f \n", elapsedTime, durat);
+  }
+	fprintf(stderr,"Elapsed Time: %f, Duration: %f \n", elapsedTime, durat);
+
+
   canStopExposureNow = false;
   adress=0;
   //on +15V
   HC595 ( 0xCF );
-  fprintf ( stderr,"write exp tick\n" );
+  fprintf ( stderr,"write exp tick, durat: %f, dd %d\n",durat,dd );
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
     }
-  readframe ( mBin, 1000 );
+  readframe ( mBin, 1000 ); //read frame after an additional second of exposure???
   canStopExposureNow = true;
   ( void ) arg;
   pthread_exit ( 0 );
@@ -653,6 +768,7 @@ void *Timer15VTick ( void *arg )  /*stdcall;*/
   adress=0;
   HC595 ( 0x4F );
   fprintf ( stderr,"write 15V tick\n" );
+  
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -776,6 +892,7 @@ bool cameraConnect()               /*stdcall; export;*/
 
 
 
+
 /*Disconnect camera, return bool result*/
 bool cameraDisconnect ( void )            /*stdcall; export;*/
 {
@@ -842,12 +959,18 @@ int cameraStartExposure ( int Bin,int StartX,int StartY,int NumX,int NumY, doubl
   if ( Duration > 0.499 )
     {
       adress=0;
+	    
+      clearframe();
       shift3();
+	  
+//	  fprintf(stderr, "adress = %d\n", adress);
       if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
         {
           fprintf ( stderr,"write failed on channel 2)\n" );
         }
-
+	  
+	  clock_gettime(CLOCK_MONOTONIC, &exposureStartTime);
+	  
       pthread_t te,tt;
       pthread_create ( &te, NULL, ExposureTimerTick, NULL );
       pthread_detach ( te );
@@ -906,8 +1029,14 @@ bool cameraGetImageReady()               /*stdcall; export;*/
 }
 
 
+
 uint16_t cameraGetImage ( int i,int j )
 {
+//	fprintf(stderr,"cameraGetImage %d %d\n",i,j);
+  if(i<getImageImin) getImageImin=i;
+  if(i>getImageImax) getImageImax=i;
+  if(j<getImageJmin) getImageJmin=j;
+  if(j>getImageJmax) getImageJmax=j;
   cameraState=cameraDownload;
   cameraState=cameraIdle;
   return bufim[i][j];
@@ -915,6 +1044,7 @@ uint16_t cameraGetImage ( int i,int j )
 
 void cameraGetImage2 ( void *buff )
 {
+  fprintf(stderr,"cameraGetImage2\n");
   buff = bufim;
 }
 /*Set camera gain, return bool result*/
@@ -1022,10 +1152,16 @@ int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, 
     {
       retry++;
       usleep ( 1 );
-      fprintf ( stderr,"Try %d since %d<>%d \n",retry, rsize,size );
+ //     fprintf ( stderr,"Try %d since %d<>%d \n",retry, rsize,size );
       rsize = rsize+ftdi_read_data ( ftdi, buf+rsize, nsize );
       nsize = size - rsize;
     }
+  if(retry>=20)
+	{
+ 		fprintf ( stderr,"Read Error: Too many retries stopped at %d \n",retry ); 
+	} else {
+// 		fprintf ( stderr,"Read: Retries needed: %d \n",retry ); 		
+	}
   return rsize;
 }
 

@@ -80,6 +80,9 @@ private:
 
     INumber LibftdilatencyBN[1];
     INumberVectorProperty LibftdilatencyBNP;
+	
+	ISwitch ContinuousADToggle[1];
+	ISwitchVectorProperty ContinuousADToggleP;
 
     float ExposureRequest;
     float TemperatureRequest;
