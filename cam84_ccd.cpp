@@ -246,9 +246,9 @@ bool Cam84CCD::initProperties()
     /*const short minGain = 0;
     const short maxGain = 63;
     const short minOffset = -127;
-    const short maxOffset = 127;
-    const short minBaudrate = 80;
-    const short maxBaudrate = 240;*/
+    const short maxOffset = 127; */
+    const short minBaudrate = 10;
+    const short maxBaudrate = 6000;
 
     /* Add Gain number property (gs) */
     IUFillNumber(GainN, "GAIN", "Gain", "%g", 0, 63, 1, CAM84_GAIN);
@@ -261,7 +261,7 @@ bool Cam84CCD::initProperties()
                        "Offset", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Baudrate number property (gs) */
-    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", 10, 150, 10, CAM84_BAUDRATE);
+    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", minBaudrate, maxBaudrate, 10, CAM84_BAUDRATE);
     IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 

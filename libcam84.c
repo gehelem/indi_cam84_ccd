@@ -27,6 +27,9 @@ const int dx2 = 86;//1586-xccd;
 const int dy = 12;//512-(yccd / 2);
 //const int apolosa = 50;
 
+const short minBaudrate = 10;
+const short maxBaudrate = 6000;
+
 /*camera state consts*/
 const int cameraIdle = 0;
 const int cameraWaiting = 1;
@@ -81,7 +84,7 @@ double spusb;
 double ms1;
 
 //exposure start time
-struct timespec exposureStartTime, currentTime;
+struct timespec exposureStartTime, currentTime, readStartTime;
 double elapsedTime;
 
 void AD9822 ( uint8_t adr , uint16_t val );
@@ -417,6 +420,8 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
   uint16_t x,y,x1,byteCnt;
   bool readFailed;
 fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
+clock_gettime(CLOCK_MONOTONIC, &readStartTime);
+
 //fprintf(stderr,"poseexecute y : %d>%d x : %d>%d\n",mYn,mYn+mdeltY-1,0,mdeltX - 1);
 //for (x=0;x<13000;x++) FT_In_Buffer[x]=0;
   //canWrite=true;
@@ -456,10 +461,18 @@ fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn
           for ( x=0; x < mdeltX; x ++ )
             {
               x1=x+mXn;
+
+              bufim[2*x1][2*y]    =swap(FT_In_Buffer[ ( 4*x   ) *2 ]);
+              bufim[2*x1][2*y+1]  =swap(FT_In_Buffer[ ( 4*x+1 ) *2 ]);
+              bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[ ( 4*x+2 ) *2 ]);
+              bufim[2*x1+1][2*y]  =swap(FT_In_Buffer[ ( 4*x+3 ) *2 ]);
+
+/*
               bufim[2*x1][2*y]    =1*FT_In_Buffer[ ( 4*x ) *2]+256*FT_In_Buffer[ ( 4*x ) *2+1];
               bufim[2*x1][2*y+1]  =1*FT_In_Buffer[ ( 4*x+1 ) *2]+256*FT_In_Buffer[ ( 4*x+1 ) *2+1];
               bufim[2*x1+1][2*y+1]=1*FT_In_Buffer[ ( 4*x+2 ) *2]+256*FT_In_Buffer[ ( 4*x+2 ) *2+1];
               bufim[2*x1+1][2*y]  =1*FT_In_Buffer[ ( 4*x+3 ) *2]+256*FT_In_Buffer[ ( 4*x+3 ) *2+1];
+*/
             }
         }
       else
@@ -479,15 +492,19 @@ fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn
             }
           for ( x=0; x < mdeltX ; x ++ )
             {
+              /*
               x1=x+mXn;
-              /*bufim[2*x1][2*y]=swap(FT_In_Buffer[x]);
+              bufim[2*x1][2*y]=swap(FT_In_Buffer[x]);
               bufim[2*x1+1][2*y]=swap(FT_In_Buffer[x]);
               bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[x]);
-              bufim[2*x1][2*y+1]=swap(FT_In_Buffer[x]);*/
+              bufim[2*x1][2*y+1]=swap(FT_In_Buffer[x]);
+              */
+
               bufim[2*x1][2*y]    =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
               bufim[2*x1][2*y+1]  =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
               bufim[2*x1+1][2*y+1]=1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
               bufim[2*x1+1][2*y]  =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
+
             }
         }
     }
@@ -498,6 +515,10 @@ fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn
     if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
   }*/
   ftdi_usb_purge_rx_buffer ( CAM8A );
+
+  clock_gettime(CLOCK_MONOTONIC, &currentTime);
+  elapsedTime = (currentTime.tv_sec - readStartTime.tv_sec) + (currentTime.tv_nsec - readStartTime.tv_nsec)*1.0e-9;
+  fprintf(stderr,"Read Elapsed Time %f\n",elapsedTime);
 
   //ftdi_usb_purge_tx_buffer(CAM8B);
   //ftdi_usb_purge_rx_buffer(CAM8B);
@@ -711,7 +732,6 @@ void readframe ( int bin,int expoz )
   pthread_join ( t1,NULL );
   imageReady = true;
   cameraState=cameraIdle;
-  fprintf ( stderr,"readframe : end\n" );
 
 }
 
@@ -739,11 +759,15 @@ void *ExposureTimerTick ( void *arg )  /*stdcall;*/
 	{
 		usleep(10000);
 	}
-	clock_gettime(CLOCK_MONOTONIC, &currentTime);
-	elapsedTime = (currentTime.tv_sec - exposureStartTime.tv_sec) + (currentTime.tv_nsec - exposureStartTime.tv_nsec)*1.0e-9;
+   clock_gettime(CLOCK_MONOTONIC, &currentTime);
+   elapsedTime = (currentTime.tv_sec - exposureStartTime.tv_sec) + (currentTime.tv_nsec - exposureStartTime.tv_nsec)*1.0e-9;
+
 	//fprintf(stderr,"Elapsed Time: %f, Duration: %f \n", elapsedTime, durat);
   }
-	fprintf(stderr,"Elapsed Time: %f, Duration: %f \n", elapsedTime, durat);
+
+  clock_gettime(CLOCK_MONOTONIC, &currentTime);
+  elapsedTime = (currentTime.tv_sec - exposureStartTime.tv_sec) + (currentTime.tv_nsec - exposureStartTime.tv_nsec)*1.0e-9;
+    fprintf(stderr,"Elapsed Time: %f, Duration: %f \n", elapsedTime, durat);
 
 
   canStopExposureNow = false;
@@ -1089,17 +1113,19 @@ bool cameraSetBaudrate ( int val )                /*stdcall; export;*/
 {
   bool Result;
   /*setup FT2232 baud rate*/
-  if ( ( val>=10 ) & ( val<=150 ) )
+  if ( ( val>=minBaudrate ) & ( val<=maxBaudrate ) )
     {
       spusb = val*10000;
       ms1 = spusb / 8000;
       FT_Current_Baud = spusb;
       ftdi_result=ftdi_set_baudrate ( CAM8A,FT_Current_Baud );
+      fprintf( stderr, "***Setting Baud Rate A to %d\n", FT_Current_Baud);
       if ( ftdi_result<0 )
         {
           fprintf ( stderr,"libftdi error set baud interface A (%d:%s)\n",ftdi_result,ftdi_get_error_string ( CAM8A ) );
         }
-      ftdi_result=ftdi_set_baudrate ( CAM8B,FT_Current_Baud );
+      fprintf( stderr, "***Setting Baud Rate B to %d\n", FT_Current_Baud);
+      ftdi_result=ftdi_set_baudrate ( CAM8B,FT_Current_Baud/4 );  //Baud rate for bit bang is 4x baud rate, WHY?
       if ( ftdi_result<0 )
         {
           fprintf ( stderr,"libftdi error set baud interface B (%d:%s)\n",ftdi_result,ftdi_get_error_string ( CAM8B ) );
@@ -1136,13 +1162,11 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
 uint16_t swap ( uint16_t x )
 {
   uint8_t hibyte = ( x & 0xFF00 ) >> 8;
-  uint8_t lobyte = ( x & 0x00FF );
-  uint16_t ret;
-  ret= ( lobyte << 8 ) | hibyte; // originale ?
-  //ret = hibyte << 8 | lobyte;
+  uint8_t lobyte = ( x & 0x00FF ) << 8;
+  uint8_t ret;
+  ret= lobyte | hibyte; // swapped bytes
   return ret;
 }
-
 int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, int size )
 {
   int rsize = ftdi_read_data ( ftdi, buf, size );
@@ -1151,7 +1175,7 @@ int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, 
   while ( ( nsize>0 ) & ( retry<20 ) )
     {
       retry++;
-      usleep ( 1 );
+      usleep ( 10 );
  //     fprintf ( stderr,"Try %d since %d<>%d \n",retry, rsize,size );
       rsize = rsize+ftdi_read_data ( ftdi, buf+rsize, nsize );
       nsize = size - rsize;
@@ -1159,8 +1183,8 @@ int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, 
   if(retry>=20)
 	{
  		fprintf ( stderr,"Read Error: Too many retries stopped at %d \n",retry ); 
-	} else {
-// 		fprintf ( stderr,"Read: Retries needed: %d \n",retry ); 		
+    } else if(retry>0) {
+        fprintf ( stderr,"Read: Retries needed: %d \n",retry );
 	}
   return rsize;
 }
