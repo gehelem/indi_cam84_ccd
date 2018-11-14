@@ -25,6 +25,7 @@
 
 
 #include <indiccd.h>
+#include <unistd.h>
 
 class Cam84CCD : public INDI::CCD
 {

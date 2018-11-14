@@ -91,7 +91,7 @@ void AD9822 ( uint8_t adr , uint16_t val );
 void HC595 ( uint8_t va );
 //static uint16_t FT_In_Buffer[6000];
 static uint8_t FT_In_Buffer[13000];
-static uint8_t FT_Out_Buffer[26000000];
+static uint8_t FT_Out_Buffer[500000];
 int  FT_Current_Baud;
 bool FT_OP_flag;
 
@@ -106,7 +106,7 @@ void coexecute ( void );
 void ComRead ( void );
 int ftdi_read_data_modified ( struct ftdi_context *ftdi, unsigned char *buf,  int size );
 
-uint16_t swap ( uint16_t x );
+inline uint16_t  swap ( void * x );
 
 //int ftStatus = 0;
 uint32_t   bytesWritten = 0;
@@ -229,7 +229,8 @@ void AD9822 ( uint8_t adr,uint16_t val )
 
   //for (int xx=0;xx<sizeof(dan);xx++) fprintf(stderr,"%X ",dan[xx]);
   //fprintf(stderr,"\n ");
-  if ( ftdi_write_data ( CAM8B, dan, sizeof ( dan ) ) < 0 )
+  fprintf(stderr,"0) ftdi_write_data with AD command size of %lu\n", sizeof ( dan ));
+  if ( ftdi_write_data ( CAM8B, dan, sizeof ( dan ) ) < 0 )  //Send command to serial port of AD9822
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
     }
@@ -413,11 +414,12 @@ void clearframe()
 /*??-?? ???????????? AD9822 ????????? ??????? ??????? ????, ????? ???????, ? ? delphi ????????.*/
 /*?????????? ????? ??? int32, ? ?? word16 ??-?? ???????????? ??? ??????????? ?????????*/
 
-/*?????????? ???? ?????? ??????? ????? ???? ADBUS*/
+/*?????????? ???? ?????? ??????? ????? ?? ADBUS*/
 void *posExecute ( void *arg )	//Thread assembles data read from AD and places it in the image buffer
 {
 //printf("poseExecute\n");
-  uint16_t x,y,x1,byteCnt;
+  uint16_t x,y,x1,byteCnt,x_int,y_int;
+  uint8_t * FT_In_BufferP;
   bool readFailed;
 fprintf(stderr,"poseexecute mYn %d mdeltY %d mXn %d mdeltX %d \n",mYn,mdeltY,mXn,mdeltX);
 clock_gettime(CLOCK_MONOTONIC, &readStartTime);
@@ -462,10 +464,14 @@ clock_gettime(CLOCK_MONOTONIC, &readStartTime);
             {
               x1=x+mXn;
 
-              bufim[2*x1][2*y]    =swap(FT_In_Buffer[ ( 4*x   ) *2 ]);
-              bufim[2*x1][2*y+1]  =swap(FT_In_Buffer[ ( 4*x+1 ) *2 ]);
-              bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[ ( 4*x+2 ) *2 ]);
-              bufim[2*x1+1][2*y]  =swap(FT_In_Buffer[ ( 4*x+3 ) *2 ]);
+              x_int=x1+x1;
+              y_int=y+y;
+              FT_In_BufferP = FT_In_Buffer + 8*x;
+              bufim[x_int][y_int]    =swap(FT_In_BufferP);
+              bufim[x_int][y_int+1]  =swap(FT_In_BufferP + 2 );
+              x_int++;
+              bufim[x_int][y_int+1]  =swap(FT_In_BufferP + 4 );
+              bufim[x_int][y_int]    =swap(FT_In_BufferP + 6 );
 
 /*
               bufim[2*x1][2*y]    =1*FT_In_Buffer[ ( 4*x ) *2]+256*FT_In_Buffer[ ( 4*x ) *2+1];
@@ -595,6 +601,7 @@ void readframe ( int bin,int expoz )
 
 
   shift2();
+  fprintf(stderr,"1) ftdi_write_data with adress size of %d\n", adress);
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -606,6 +613,7 @@ void readframe ( int bin,int expoz )
       shift();
     }
   clearline2();
+  fprintf(stderr,"2) ftdi_write_data with adress size of %d\n", adress);
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -619,8 +627,8 @@ void readframe ( int bin,int expoz )
   fprintf( stderr,"mdeltX: %6d, mdeltaY: %6d, mXn %6d, mYn %6d, dx %6d, dy %6d, dx2 %6d  \n", mdeltX, mdeltY, mXn, mYn, dx, dy, dx2);
   fprintf( stderr,"L1: %6d, L3: %6d, L4 %6d \n\n", dx+4*mXn, 4*mdeltX-2, dx2+6000-4*mdeltX-4*mXn);
   
-  for ( y=0; y < mdeltY ; y ++ )					//Loops number of ypixels/2 in requested image
-    {
+//  for ( y=0; y < mdeltY ; y ++ )					//Loops number of ypixels/2 in requested image
+//    {
       adress=0;
       shift();										//Shift one vertical line
       for ( x=0; x < dx+4*mXn; x ++ )			//L1
@@ -719,6 +727,10 @@ void readframe ( int bin,int expoz )
       //canRead=false;
 //gettimeofday(&curTime, NULL);
 //fprintf(stderr,"Time writ %d %d\n",curTime.tv_sec,curTime.tv_usec);
+//      if(y==0)
+          fprintf(stderr,"3) ftdi_write_data with adress size of %d for %d times\n", adress, mdeltY);
+     for ( y=0; y < mdeltY ; y ++ )					//Loops number of ypixels/2 in requested image
+     {
       if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
         {
           fprintf ( stderr,"write failed on channel 2)\n" );
@@ -749,7 +761,8 @@ void *ExposureTimerTick ( void *arg )  /*stdcall;*/
 		adress = 0;
 		preCharge(10000);
 		for (int x=0; x<1; x++) {
-			if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+            fprintf(stderr,"4) ftdi_write_data with adress size of %d\n", adress);
+            if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
 				{
 					fprintf ( stderr,"write failed on channel 2)\n" );
 				}
@@ -775,6 +788,7 @@ void *ExposureTimerTick ( void *arg )  /*stdcall;*/
   //on +15V
   HC595 ( 0xCF );
   fprintf ( stderr,"write exp tick, durat: %f, dd %d\n",durat,dd );
+  fprintf(stderr,"5) ftdi_write_data with adress size of %d\n", adress);
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -793,6 +807,7 @@ void *Timer15VTick ( void *arg )  /*stdcall;*/
   HC595 ( 0x4F );
   fprintf ( stderr,"write 15V tick\n" );
   
+  fprintf(stderr,"6) ftdi_write_data with adress size of %d\n", adress);
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -832,6 +847,7 @@ bool cameraConnect()               /*stdcall; export;*/
   FT_OP_flag = true;
   CAM8A = ftdi_new();
   CAM8B = ftdi_new();
+  int errorCode;
   if ( ftdi_set_interface ( CAM8A, INTERFACE_A ) <0 )
     {
       fprintf ( stderr,"libftdi error set interface A\n" );
@@ -840,13 +856,15 @@ bool cameraConnect()               /*stdcall; export;*/
     {
       fprintf ( stderr,"libftdi error set interface B\n" );
     }
-  if ( ftdi_usb_open ( CAM8A, 0x0403, 0x6010 ) <0 )
+  errorCode = ftdi_usb_open ( CAM8A, 0x0403, 0x6010 );
+  if (errorCode  <0 )
     {
-      fprintf ( stderr,"libftdi error open interface A\n" );
+      fprintf ( stderr,"libftdi error open interface A (%d:%s)\n", errorCode, ftdi_get_error_string ( CAM8A ));
     }
-  if ( ftdi_usb_open ( CAM8B, 0x0403, 0x6010 ) <0 )
+  errorCode = ftdi_usb_open ( CAM8B, 0x0403, 0x6010 );
+  if ( errorCode <0 )
     {
-      fprintf ( stderr,"libftdi error open interface B\n" );
+      fprintf ( stderr,"libftdi error open interface B (%d:%s)\n", errorCode, ftdi_get_error_string ( CAM8B ));
     }
 
 // BitBang channel 2
@@ -897,6 +915,7 @@ bool cameraConnect()               /*stdcall; export;*/
   AD9822 ( 3,34 );
   adress=0;
   HC595 ( 0xCF );
+  fprintf(stderr,"7) ftdi_write_data with adress size of %d\n", adress);
   if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
     {
       fprintf ( stderr,"write failed on channel 2)\n" );
@@ -988,6 +1007,7 @@ int cameraStartExposure ( int Bin,int StartX,int StartY,int NumX,int NumY, doubl
       shift3();
 	  
 //	  fprintf(stderr, "adress = %d\n", adress);
+      fprintf(stderr,"8) ftdi_write_data with adress size of %d\n", adress);
       if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
         {
           fprintf ( stderr,"write failed on channel 2)\n" );
@@ -1057,10 +1077,10 @@ bool cameraGetImageReady()               /*stdcall; export;*/
 uint16_t cameraGetImage ( int i,int j )
 {
 //	fprintf(stderr,"cameraGetImage %d %d\n",i,j);
-  if(i<getImageImin) getImageImin=i;
+/*  if(i<getImageImin) getImageImin=i;
   if(i>getImageImax) getImageImax=i;
   if(j<getImageJmin) getImageJmin=j;
-  if(j>getImageJmax) getImageJmax=j;
+  if(j>getImageJmax) getImageJmax=j; */
   cameraState=cameraDownload;
   cameraState=cameraIdle;
   return bufim[i][j];
@@ -1159,14 +1179,15 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
   return true;
 }
 
-uint16_t swap ( uint16_t x )
+uint16_t  swap ( void * x )  //NO NEED TO SWAP JUST NEED RESIZE OF POINTER
 {
-  uint8_t hibyte = ( x & 0xFF00 ) >> 8;
-  uint8_t lobyte = ( x & 0x00FF ) << 8;
-  uint8_t ret;
-  ret= lobyte | hibyte; // swapped bytes
-  return ret;
+  uint16_t * xp = x;
+//  uint16_t hibyte =  ( *xp & 0xFF00 ) >> 8;
+//  uint16_t lobyte = ( *xp & 0x00FF ) << 8;
+//  uint16_t ret= lobyte | hibyte; // swapped bytes
+  return * xp;
 }
+
 int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, int size )
 {
   int rsize = ftdi_read_data ( ftdi, buf, size );

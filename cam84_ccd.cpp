@@ -507,7 +507,7 @@ void Cam84CCD::grabImage()
     IDMessage(getDeviceName(), "grabimage width=%d height=%d BPP=%d\n", width/2, height, PrimaryCCD.getBPP() );
 
    // Fill buffer with random pattern
-   while (!cameraGetImageReady() ); // waiting image
+   while (!cameraGetImageReady() ) usleep(1000000); // waiting image
    if (PrimaryCCD.getBinX()==1) 
    {
 	   int di = PrimaryCCD.getSubX();
