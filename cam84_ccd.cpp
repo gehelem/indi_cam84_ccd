@@ -112,7 +112,7 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             BaudrateNP.s = IPS_OK;
             IDSetNumber(&BaudrateNP, NULL);
             cameraSetBaudrate(BaudrateN[0].value);
-            IDMessage(getDeviceName(), "Cam84 set baudrate = %d",(int) BaudrateN[0].value);
+            IDMessage(getDeviceName(), "Cam84 set baudrate = %d kbps",(int) BaudrateN[0].value);
             return true;
         }
 
@@ -247,8 +247,8 @@ bool Cam84CCD::initProperties()
     const short maxGain = 63;
     const short minOffset = -127;
     const short maxOffset = 127; */
-    const short minBaudrate = 10;
-    const short maxBaudrate = 6000;
+    const short minBaudratekb = 100;
+    const short maxBaudratekb = 3000;
 
     /* Add Gain number property (gs) */
     IUFillNumber(GainN, "GAIN", "Gain", "%g", 0, 63, 1, CAM84_GAIN);
@@ -261,12 +261,12 @@ bool Cam84CCD::initProperties()
                        "Offset", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Baudrate number property (gs) */
-    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate", "%g", minBaudrate, maxBaudrate, 10, CAM84_BAUDRATE);
+    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate kbps", "%g", minBaudratekb, maxBaudratekb, 50, CAM84_BAUDRATE);
     IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
                        "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Latency number property (gs) */
-    IUFillNumber(LibftdilatencyAN, "LATENCYA", "LatencyA", "%g", 1, 50, 1, CAM84_LATENCYA);
+    IUFillNumber(LibftdilatencyAN, "LATENCYA", "LatencyA", "%g", 0, 255, 1, CAM84_LATENCYA);
     IUFillNumberVector(&LibftdilatencyANP, LibftdilatencyAN, 1, getDeviceName(),"LATENCYA",
                        "LatencyA", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
@@ -276,7 +276,7 @@ bool Cam84CCD::initProperties()
                        "TimerA", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Latency number property (gs) */
-    IUFillNumber(LibftdilatencyBN, "LATENCYB", "LatencyB", "%g", 1, 50, 1, CAM84_LATENCYB);
+    IUFillNumber(LibftdilatencyBN, "LATENCYB", "LatencyB", "%g", 0, 255, 1, CAM84_LATENCYB);
     IUFillNumberVector(&LibftdilatencyBNP, LibftdilatencyBN, 1, getDeviceName(),"LATENCYB",
                        "LatencyB", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
@@ -299,6 +299,7 @@ bool Cam84CCD::initProperties()
     IUSaveText(&BayerT[2], "GRBG");    
     // Add Debug, Simulator, and Configuration controls
     addAuxControls();
+    addDebugControl();
 
     return true;
 

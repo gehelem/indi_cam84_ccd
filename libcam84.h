@@ -1,7 +1,7 @@
 #ifndef __LIBCAM84_H__
 #define __LIBCAM84_H__
 
-#define CAM84_BAUDRATE  150
+#define CAM84_BAUDRATE  1000
 #define CAM84_GAIN      0
 #define CAM84_OFFSET    0
 #define CAM84_LATENCYA  1

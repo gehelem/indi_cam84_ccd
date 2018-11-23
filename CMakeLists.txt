@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 2.4.7)
 PROJECT(indi_cam84_ccd C CXX)
+
+option(LIBFTDI "Use the LIBFTDI Library" OFF)
+
+if(LIBFTDI)
+	add_definitions(-DLIBFTDI)
+endif()
+
 SET ( CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -pthread" )
 if(COMMAND cmake_policy)
       cmake_policy(SET CMP0003 NEW)
@@ -42,7 +49,7 @@ set(cam84ccd_SRCS
 
 add_executable(indi_cam84_ccd ${cam84ccd_SRCS})
 
-target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+target_link_libraries(indi_cam84_ccd cam84 /usr/local/lib/libftd2xx.so ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
 
 install(TARGETS indi_cam84_ccd RUNTIME DESTINATION bin)
 
