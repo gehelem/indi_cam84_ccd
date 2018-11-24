@@ -12,7 +12,7 @@
 
 
 #ifdef __cplusplus
-extern "C" {
+//extern "C" {
 #endif
 
 bool cameraConnect(void);
@@ -32,7 +32,16 @@ bool cameraSetLibftdiTimers(int latA,int latB,int timerA,int timerB);
 bool cameraSetContinuousADToggle(bool continuousADToggleValue);
 
 #ifdef __cplusplus
-}
+//}
 #endif
 
 #endif
+class LibCam84
+{
+public:
+    LibCam84();
+protected:
+//    const char *getDeviceName();
+};
+
+

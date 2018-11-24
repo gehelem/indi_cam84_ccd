@@ -24,9 +24,6 @@
 */
 
 
-#include <indiccd.h>
-#include <unistd.h>
-
 class Cam84CCD : public INDI::CCD
 {
 public:
@@ -51,7 +48,7 @@ protected:
     void TimerHit();
 
 private:
-    // Utility functions
+   // Utility functions
     float CalcTimeLeft();
     void  setupParams();
     void  grabImage();
