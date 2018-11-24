@@ -23,6 +23,8 @@
 #include <sys/time.h>
 #include <memory>
 #include <math.h>
+#include <indiccd.h>
+#include <unistd.h>
 #include "cam84_ccd.h"
 #include "libcam84.h"
 
@@ -35,6 +37,11 @@ const float TEMP_THRESHOLD = .25;		/* Differential temperature threshold (C)*/
 #define currentCCDTemperature   TemperatureN[0].value
 
 std::unique_ptr<Cam84CCD> simpleCCD(new Cam84CCD());
+
+//const char * getDeviceName()  //FIX will not link
+//{
+//    return("cam84_ccd");
+//}
 
 void ISGetProperties(const char *dev)
 {

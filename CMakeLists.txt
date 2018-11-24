@@ -21,7 +21,7 @@ include(GNUInstallDirs)
 set (CAM84_VERSION_MAJOR 1)
 set (CAM84_VERSION_MINOR 0)
 
-add_library(cam84 libcam84.c)
+add_library(cam84 libcam84.cpp)
 
 find_package(CFITSIO REQUIRED)
 find_package(INDI REQUIRED)
