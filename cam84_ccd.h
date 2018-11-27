@@ -2,17 +2,14 @@
 #define CAM84CCD_H
 
 /*
+   Code derived from:
+
    INDI Developers Manual
    Tutorial #3
 
    "Simple CCD Driver"
 
-   We develop a simple CCD driver.
-
-   Refer to README, which contains instruction on how to build this driver, and use it
-   with an INDI-compatible client.
-
-*/
+ */
 
 /** \file simpleccd.h
     \brief Construct a basic INDI CCD device that simulates exposure & temperature settings. It also generates a random pattern and uploads it as a FITS file.
