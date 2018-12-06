@@ -7,11 +7,11 @@ http://astroccd.org/2015/04/cam84/
 http://www.cloudynights.com/topic/497530-diy-astro-ccd-16-bit-color-6mpx-camera
 http://indilib.org
 
-Now using libftdi instead of FTDI D2XX, unloading ftdi_sio is no more necessary :
-New udev file unbinds just the necessary devices
-BUT : libftdi seems more tricky to use with timings... many reads/writes fails
+Now using libftdi can use FTDI D2XX by doing a 
+cmake . -DLIBFTDI=OFF
+(default is -DLIBFTDI=ON which uses libftdi)
 
-Now testing :
--2x2 binning
--Framing
+libftdi performance has been greatly improved by increasing the ftdi_write_data_set_chunksize back to the default value.
 
+Framing now works
+2x2 binning may not be ready

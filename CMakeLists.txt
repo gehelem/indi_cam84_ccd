@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 2.4.7)
 PROJECT(indi_cam84_ccd C CXX)
 
-option(LIBFTDI "Use the LIBFTDI Library" OFF)
+option(LIBFTDI "Use the LIBFTDI Library" ON)
 
 if(LIBFTDI)
 	add_definitions(-DLIBFTDI)
@@ -49,10 +49,16 @@ set(cam84ccd_SRCS
 
 add_executable(indi_cam84_ccd ${cam84ccd_SRCS})
 
-target_link_libraries(indi_cam84_ccd cam84 /usr/local/lib/libftd2xx.so ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+if (LIBFTDI)
+target_link_libraries(indi_cam84_ccd cam84 ${LIBFTDI_LIBRARIES} ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+else (LIBFTDI)
+target_link_libraries(indi_cam84_ccd cam84 /usr/local/lib/libftd2xx.so ${INDI_DRIVER_LIBRARIES} ${CFITSIO_LIBRARIES} m ${ZLIB_LIBRARY})
+endif(LIBFTDI)
 
 install(TARGETS indi_cam84_ccd RUNTIME DESTINATION bin)
 
 endif (CFITSIO_FOUND)
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/indi_cam84_ccd.xml DESTINATION ${INDI_DATA_DIR})
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/99-cam84.rules DESTINATION /lib/udev/rules.d )
