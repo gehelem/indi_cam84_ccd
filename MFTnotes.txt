@@ -1,7 +1,8 @@
 Notes based on original code to understand operation
 
 post at https://www.cloudynights.com/topic/497530-diy-astro-ccd-16-bit-color-6mpx-camera/page-38#entry7266698
-says read out is 1.5 seconds but my speeds are being limited by USB issues? (30s on one machine 6s on another)
+says read out is 1.5 seconds but speeds (divisor < 2, > 1.5 Mbps) result in corrupt images.  (Need to check
+my power supplies at higher speeds?)
 
 icx453aq is an interline ccd
 
@@ -26,11 +27,6 @@ cameraStartExposure
 ------>HC595 ( 0x4F );  //off +15V  Turns of 15V3 by applying F7 to Q2
 ------>ftdi_write_data ( CAM8B, FT_Out_Buffer, adress )
 
-Is issue with long waits between exposures due to not properly clearing CCD at beginning of exposure?
-Are we clearing all rows and columns?  YES 
-
-problem is due to not clearing each line.
-Concerned Vdd is not being turned out at the right time.
 
 ======================================================================================================================================================
 
@@ -67,5 +63,3 @@ HC595 bit assignments
   ---------------- 0x80   F7  ->  Q2  	-> 15V3									->  VDD
   
 ===========
-
-install indilib from latest https://www.indilib.org/download.html
