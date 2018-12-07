@@ -45,8 +45,8 @@ const int dx2 = 86;//1586-xccd;
 const int dy = 12;//512-(yccd / 2);
 //const int apolosa = 50;
 
-const short minBaudrate = 10;
-const short maxBaudrate = 3000;
+//const short minBaudrate = 10;
+//const short maxBaudrate = 3000;
 
 /*camera state consts*/
 const int cameraIdle = 0;
@@ -984,7 +984,7 @@ bool cameraConnect()               /*stdcall; export;*/
 //    fprintf(stderr,"BITMODE_BITBANG const %d \n",BITMODE_BITBANG);
 
     // Baudrate
-    cameraSetBaudrate ( CAM84_BAUDRATE );
+    cameraSetBaudrateDivisor ( CAM84_BAUDRATE_DIVISOR );
 
     //timeouts - latency
     cameraSetLibftdiTimers ( CAM84_LATENCYA,CAM84_LATENCYB,CAM84_TIMERA,CAM84_TIMERB );
@@ -1054,7 +1054,7 @@ bool cameraConnect()               /*stdcall; export;*/
 
 
     // Baudrate
-    cameraSetBaudrate ( CAM84_BAUDRATE );
+    cameraSetBaudrateDivisor ( CAM84_BAUDRATE_DIVISOR );
 
     //timeouts - latency
     cameraSetLibftdiTimers ( CAM84_LATENCYA,CAM84_LATENCYB,CAM84_TIMERA,CAM84_TIMERB );
@@ -1333,14 +1333,31 @@ int cameraGetError()           /*stdcall; export;*/
 }
 
 /*Set camera baudrate, return bool result*/
-bool cameraSetBaudrate ( int val )                /*stdcall; export;*/
+bool cameraSetBaudrateDivisor ( int theDivisor )                /*stdcall; export;*/
 {
+    int theBaudRatekbps;
+    if (theDivisor < 2)
+    {
+        if (theDivisor <= 0)
+        {
+            theBaudRatekbps = 3000;
+        }
+        else
+        {
+            theBaudRatekbps = 2000;
+        }
+    }
+    else
+    {
+        theBaudRatekbps = 3000 / theDivisor;
+    }
+
     bool Result = false;
     /*setup FT2232 baud rate*/
-    if ( ( val>=minBaudrate ) & ( val<=maxBaudrate ) )
+//    if ( ( theBaudRatekbps>=minBaudrate ) & ( theBaudRatekbps<=maxBaudrate ) )
     {
         Result = true;      //valid baud rate requested
-        spusb = val*1000;
+        spusb = theBaudRatekbps*1000;
         ms1 = spusb / 5000;  //used to generate a millisecond of delay via output clock rate
                              // represents number of bit bang pulses in 1 millisecond
                              // Note: Output clock rate for asynchrounous bit bang is 5x the
@@ -1383,11 +1400,11 @@ bool cameraSetBaudrate ( int val )                /*stdcall; export;*/
 
         return Result;
     }
-    else
-    {
-        fprintf( stderr, "Requested Baud rate of %d kbps is outside of allowed limits.\n",val);
-        return false;
-    }
+//    else
+//    {
+//        fprintf( stderr, "Requested Baud rate of %d kbps is outside of allowed limits.\n",theBaudRatekbps);
+//        return false;
+//    }
 }
 
 bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )

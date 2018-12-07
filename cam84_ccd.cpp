@@ -113,13 +113,30 @@ bool Cam84CCD::ISNewNumber(const char *dev, const char *name,
             return true;
         }
 
-        if (!strcmp(name, BaudrateNP.name))
+        if (!strcmp(name, BaudrateDivisorNP.name))
         {
-            IUUpdateNumber(&BaudrateNP, values, names, n);
-            BaudrateNP.s = IPS_OK;
-            IDSetNumber(&BaudrateNP, NULL);
-            cameraSetBaudrate(BaudrateN[0].value);
-            IDMessage(getDeviceName(), "Cam84 set baudrate = %d kbps",(int) BaudrateN[0].value);
+            IUUpdateNumber(&BaudrateDivisorNP, values, names, n);
+            BaudrateDivisorNP.s = IPS_OK;
+            IDSetNumber(&BaudrateDivisorNP, NULL);
+            cameraSetBaudrateDivisor(BaudrateDivisorN[0].value);
+            int theDivisor = BaudrateDivisorN[0].value;
+            int theBaudRatekbps;
+            if (theDivisor < 2)
+            {
+                if (theDivisor <= 0)
+                {
+                    theBaudRatekbps = 3000;
+                }
+                else
+                {
+                    theBaudRatekbps = 2000;
+                }
+            }
+            else
+            {
+                theBaudRatekbps = 3000 / theDivisor;
+            }
+            IDMessage(getDeviceName(), "Cam84 set baudrate = %d kbps", theBaudRatekbps ) ;
             return true;
         }
 
@@ -254,8 +271,8 @@ bool Cam84CCD::initProperties()
     const short maxGain = 63;
     const short minOffset = -127;
     const short maxOffset = 127; */
-    const short minBaudratekb = 100;
-    const short maxBaudratekb = 3000;
+    const short minBaudrateDivisor = 0;
+    const short maxBaudrateDivisor = 5;
 
     /* Add Gain number property (gs) */
     IUFillNumber(GainN, "GAIN", "Gain", "%g", 0, 63, 1, CAM84_GAIN);
@@ -268,9 +285,9 @@ bool Cam84CCD::initProperties()
                        "Offset", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Baudrate number property (gs) */
-    IUFillNumber(BaudrateN, "BAUDRATE", "Baudrate kbps", "%g", minBaudratekb, maxBaudratekb, 50, CAM84_BAUDRATE);
-    IUFillNumberVector(&BaudrateNP, BaudrateN, 1, getDeviceName(),"BAUDRATE",
-                       "Baudrate", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
+    IUFillNumber(BaudrateDivisorN, "BAUDRATE_DIVISOR", "Baudrate Divisor", "%g", minBaudrateDivisor, maxBaudrateDivisor, 1, CAM84_BAUDRATE_DIVISOR);
+    IUFillNumberVector(&BaudrateDivisorNP, BaudrateDivisorN, 1, getDeviceName(),"BAUDRATE_DIVISOR",
+                       "BaudrateDivsor", MAIN_CONTROL_TAB, IP_RW, 0, IPS_IDLE);
 
     /* Add Latency number property (gs) */
     IUFillNumber(LibftdilatencyAN, "LATENCYA", "LatencyA", "%g", 0, 255, 1, CAM84_LATENCYA);
@@ -331,7 +348,7 @@ bool Cam84CCD::updateProperties()
         SetTimer(POLLMS);
         defineNumber(&GainNP);
         defineNumber(&OffsetNP);
-        defineNumber(&BaudrateNP);
+        defineNumber(&BaudrateDivisorNP);
         defineNumber(&LibftditimerANP);
         defineNumber(&LibftdilatencyANP);
         defineNumber(&LibftditimerBNP);
@@ -342,7 +359,7 @@ bool Cam84CCD::updateProperties()
     {
         deleteProperty(GainNP.name);
         deleteProperty(OffsetNP.name);
-        deleteProperty(BaudrateNP.name);
+        deleteProperty(BaudrateDivisorNP.name);
         deleteProperty(LibftditimerANP.name);
         deleteProperty(LibftdilatencyANP.name);
         deleteProperty(LibftditimerBNP.name);

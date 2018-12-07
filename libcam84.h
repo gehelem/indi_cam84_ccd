@@ -1,7 +1,7 @@
 #ifndef __LIBCAM84_H__
 #define __LIBCAM84_H__
 
-#define CAM84_BAUDRATE  1000
+#define CAM84_BAUDRATE_DIVISOR  2
 #define CAM84_GAIN      0
 #define CAM84_OFFSET    0
 #define CAM84_LATENCYA  1
@@ -25,7 +25,7 @@ bool cameraGetImageReady(void);
 bool cameraSetGain (int val);
 bool cameraSetOffset (int val);
 int  cameraGetError(void);
-bool cameraSetBaudrate(int val);  
+bool cameraSetBaudrateDivisor(int val);
 uint16_t cameraGetImage(int i, int j);
 void cameraGetImage2(void *buff);
 bool cameraSetLibftdiTimers(int latA,int latB,int timerA,int timerB);

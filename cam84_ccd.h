@@ -61,8 +61,8 @@ private:
     INumber OffsetN[1];
     INumberVectorProperty OffsetNP;
 
-    INumber BaudrateN[1];
-    INumberVectorProperty BaudrateNP;
+    INumber BaudrateDivisorN[1];
+    INumberVectorProperty BaudrateDivisorNP;
 
     INumber LibftditimerAN[1];
     INumberVectorProperty LibftditimerANP;
