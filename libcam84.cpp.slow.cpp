@@ -1,4 +1,4 @@
-// define which ftdi library to use
+// define which ftdi library to use, libftdi or ftd2xx, true or false
 // if LIBFTDI is defined using ifdef LIBFTDI
 
 #include <stdio.h>
@@ -15,9 +15,6 @@
 #include <indiccd.h>
 #include <cam84_ccd.h>
 #include <indilogger.h>
-#include <atomic>
-
-//#include <libusb-1.0/libusb.h>
 
 #include <mutex>
 std::mutex m;
@@ -76,7 +73,7 @@ int ftdi_result;
 int rfstatus =0;
 double durat;
 //int x;
-//struct ftdi_context *ftdi, *ftdi2bool;
+//struct ftdi_context *ftdi, *ftdi2;
 //int f,i;
 unsigned char buf[1];
 //??????????-????, ?????????? ????????? ?????????? ? ???????
@@ -85,7 +82,7 @@ bool isConnected  = false;
 bool canStopExposureNow = true;
 //bool canRead = false;
 
-static std::atomic_bool canWrite = {false};  //Should this be protected by
+static bool canWrite = false;  //Should this be protected by
 
 //????????? ???????? ?????? ? ???????? ?????? FT2232HL
 int adress;
@@ -121,10 +118,6 @@ int ms1;
 //exposure start time
 struct timespec exposureStartTime, currentTime, readStartTime;
 double elapsedTime;
-
-//struct timespec rdmStartTime, rdmCurrentTime;
-//double rdmElapsedTime, rdmPreElapsedTime;
-
 
 void AD9822 ( uint8_t adr , uint16_t val );
 void HC595 ( uint8_t va );
@@ -497,7 +490,12 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
             //gettimeofday(&curTime, NULL);
             //fprintf(stderr,"Time pre-read  %ld %ld\n",curTime.tv_sec,curTime.tv_usec);
 
+#ifdef LIBFTDI
+            bytesRead=ftdi_read_data_modified ( CAM8A,FT_In_Buffer, 8*mdeltX );
+#else
             bytesRead=ftdi_read_data_modified ( CAM8A, FT_In_Buffer, 8*mdeltX );
+//            ftStatus=FT_Read ( CAM8A,FT_In_Buffer, 8*mdeltX, &bytesRead );
+#endif
 
             //gettimeofday(&curTime, NULL);
             //fprintf(stderr,"Time pos-tread %ld %ld\n",curTime.tv_sec,curTime.tv_usec);
@@ -540,7 +538,12 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
         }
         else
         {
+#ifdef LIBFTDI
             bytesRead=ftdi_read_data_modified ( CAM8A, FT_In_Buffer, 2*mdeltX );
+#else
+            bytesRead=ftdi_read_data_modified ( CAM8A, FT_In_Buffer, 2*mdeltX );
+//            ftStatus=FT_Read ( CAM8A,FT_In_Buffer, 2*mdeltX, &bytesRead );
+#endif
 
             if (bytesRead < 0 )
             {
@@ -555,6 +558,13 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
             }
             for ( x=0; x < mdeltX ; x ++ )
             {
+                /*
+              x1=x+mXn;
+              bufim[2*x1][2*y]=swap(FT_In_Buffer[x]);
+              bufim[2*x1+1][2*y]=swap(FT_In_Buffer[x]);
+              bufim[2*x1+1][2*y+1]=swap(FT_In_Buffer[x]);
+              bufim[2*x1][2*y+1]=swap(FT_In_Buffer[x]);
+              */
 
                 bufim[2*x1][2*y]    =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
                 bufim[2*x1][2*y+1]  =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
@@ -804,12 +814,10 @@ void readframe ( int bin,int expoz )
     {
         //      if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
 
-//        while (!canWrite)
+        while (!canWrite)
         {
 //            usleep(0);
         }
-//        usleep(10000);
-
 #ifdef LIBFTDI
         if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
 #else
@@ -994,12 +1002,8 @@ bool cameraConnect()               /*stdcall; export;*/
     fprintf ( stderr,"libftdi interface A write chunksize %u\n",CAM8A->writebuffer_chunksize );
     fprintf ( stderr,"libftdi interface B write chunksize %u\n",CAM8B->writebuffer_chunksize );
 
-    if (ftdi_read_data_set_chunksize (CAM8A,1024*4)<0 )
-    {
-        fprintf(stderr,"libftdi error set chunksize A\n");
-    }
-
-    if ( ftdi_write_data_set_chunksize ( CAM8B,1024*4 ) <0 )
+    //if (ftdi_read_data_set_chunksize (CAM8A,256*1)<0 ) fprintf(stderr,"libftdi error set chunksize A\n");
+    if ( ftdi_write_data_set_chunksize ( CAM8B,256 ) <0 )
     {
         fprintf ( stderr,"libftdi error set chunksize B\n" );
     }
@@ -1059,12 +1063,12 @@ bool cameraConnect()               /*stdcall; export;*/
     //timeouts - latency
     cameraSetLibftdiTimers ( CAM84_LATENCYA,CAM84_LATENCYB,CAM84_TIMERA,CAM84_TIMERB );
 
-   DWORD transferSize = 4096; //16384;
+ /*  DWORD transferSize = 1024; //16384;
     if(FT_SetUSBParameters(CAM8A, transferSize , 0)!=FT_OK)
         fprintf(stderr,"Error setting USB transfer size\n");
     else
         fprintf(stderr,"Setting USB transfer size to %d\n", transferSize);
-
+*/
 
     //    fprintf ( stderr,"libftdi interface A read chunksize %u\n",CAM8A->readbuffer_chunksize );
     //    fprintf ( stderr,"libftdi interface B read chunksize %u\n",CAM8B->readbuffer_chunksize );
@@ -1364,7 +1368,7 @@ bool cameraSetBaudrate ( int val )                /*stdcall; export;*/
             Result = false;
         }
 #else
-        if( (FT_SetBaudRate( CAM8A, FT_Current_Baud ) != FT_OK) )
+        if( (FT_SetBaudRate( CAM8A, FT_Current_Baud) != FT_OK) )
         {
             fprintf ( stderr,"D2xx error set baud interface A\n");
             Result = false;
@@ -1394,39 +1398,20 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
 {
     //    int wlatA,wlatB;
 #ifdef LIBFTDI
-    unsigned char latA_char = latA;
-    if ( ftdi_set_latency_timer ( CAM8A,latA_char ) <0 )
+    if ( ftdi_set_latency_timer ( CAM8A,latA ) <0 )
     {
         fprintf ( stderr,"libftdi error set latency interface A\n" );
     }
-    unsigned char latB_char = latB;
-    if ( ftdi_set_latency_timer ( CAM8B,latB_char ) <0 )
+    if ( ftdi_set_latency_timer ( CAM8B,latB ) <0 )
     {
         fprintf ( stderr,"libftdi error set latency interface B\n" );
     }
-
-    fprintf( stderr, "       latA %d latB %d \n", latA_char, latB_char);
-
-    ftdi_get_latency_timer ( CAM8A, &latA_char);
-    ftdi_get_latency_timer ( CAM8B, &latB_char);
-
-//   fprintf(stderr, "libusb %d \n", libusb_control_transfer (CAM8A-> usb_dev, FTDI_DEVICE_OUT_REQTYPE, SIO_SET_LATENCY_TIMER_REQUEST, latA_char, CAM8A-> usb_dev -> index, NULL, 0, CAM8A-> usb_dev -> usb_write_timeout)) ;
-
-//    ftdi_get_latency_timer ( CAM8A, &latA_char);
-//    ftdi_get_latency_timer ( CAM8B, &latB_char);
-    fprintf( stderr, "actual latA %d latB %d \n", latA_char, latB_char);
-
     CAM8A->usb_read_timeout=timerA;
     CAM8B->usb_read_timeout=timerB;
     CAM8A->usb_write_timeout=timerA;
     CAM8B->usb_write_timeout=timerB;
     fprintf ( stderr,"libftdi BRA=%d BRB=%d TA=%d TB=%d\n",CAM8A->baudrate,CAM8B->baudrate,CAM8A->usb_read_timeout,CAM8B->usb_write_timeout );
 #else
-    unsigned char latA_char, latB_char;
-    FT_GetLatencyTimer(CAM8A, &latA_char);
-    FT_GetLatencyTimer(CAM8A, &latB_char);
-    fprintf( stderr, "old   latA %d latB %d \n", latA_char, latB_char);
-
     if(FT_SetLatencyTimer(CAM8A, latA) != FT_OK)
         fprintf(stderr, "D2xx error setting latency A to %d\n", latA);
     if(FT_SetLatencyTimer(CAM8B, latB)!= FT_OK)
@@ -1435,11 +1420,6 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
             fprintf(stderr, "D2xx error setting timer A to %d\n", timerA);
     if(FT_SetTimeouts(CAM8B, timerB, timerB)!= FT_OK)
             fprintf(stderr, "D2xx error setting timerB to %d\n", timerB);
-
-    FT_GetLatencyTimer(CAM8A, &latA_char);
-    FT_GetLatencyTimer(CAM8A, &latB_char);
-    fprintf( stderr, "actual latA %d latB %d \n", latA_char, latB_char);
-
 #endif
     return true;
 }
@@ -1456,10 +1436,6 @@ uint16_t  swap ( void * x )  //NO NEED TO SWAP JUST NEED RESIZE OF POINTER
 #ifdef LIBFTDI
 int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, int size )
 {
-//    clock_gettime(CLOCK_MONOTONIC, &rdmStartTime);
-
-//    rdmPreElapsedTime = (-rdmCurrentTime.tv_sec + rdmStartTime.tv_sec) + (- rdmCurrentTime.tv_nsec + rdmStartTime.tv_nsec)*1.0e-9;
-
     canWrite = true;    //Really needs to be inside of read command after command is sent out USB bus
     int rsize = ftdi_read_data ( ftdi, buf, size );
     int nsize=size-rsize;
@@ -1478,20 +1454,11 @@ int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, 
     } else if(retry>0) {
         fprintf ( stderr,"Read: Retries needed: %d \n",retry );
     }
-
-//    clock_gettime(CLOCK_MONOTONIC, &rdmCurrentTime);
-//    rdmElapsedTime = (rdmCurrentTime.tv_sec - rdmStartTime.tv_sec) + (rdmCurrentTime.tv_nsec - rdmStartTime.tv_nsec)*1.0e-9;
-//    fprintf(stderr,"RDM: %f %f \n", rdmPreElapsedTime, rdmElapsedTime );
-
     return rsize;
 }
 #else
 int ftdi_read_data_modified ( FT_HANDLE ftdi, unsigned char * buf, int size )
 {
-//    clock_gettime(CLOCK_MONOTONIC, &rdmStartTime);
-
-//    rdmPreElapsedTime = (-rdmCurrentTime.tv_sec + rdmStartTime.tv_sec) + (- rdmCurrentTime.tv_nsec + rdmStartTime.tv_nsec)*1.0e-9;
-
     DWORD rsize, rsize_new;
     DWORD sizeLPD = (DWORD) size;
     canWrite = true;    //Really needs to be inside of read command after command is sent out USB bus
@@ -1515,11 +1482,6 @@ int ftdi_read_data_modified ( FT_HANDLE ftdi, unsigned char * buf, int size )
     } else if(retry>0) {
         fprintf ( stderr,"Read: Retries needed: %d \n",retry );
     }
-
-//    clock_gettime(CLOCK_MONOTONIC, &rdmCurrentTime);
-//    rdmElapsedTime = (rdmCurrentTime.tv_sec - rdmStartTime.tv_sec) + (rdmCurrentTime.tv_nsec - rdmStartTime.tv_nsec)*1.0e-9;
-//    fprintf(stderr,"RDM: %f %f \n", rdmPreElapsedTime, rdmElapsedTime );
-
     return rsize;
 }
 

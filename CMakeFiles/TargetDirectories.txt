@@ -1,0 +1,8 @@
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/install/strip.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/install/local.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/cam84.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/list_install_components.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/indi_cam84_ccd.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/edit_cache.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/rebuild_cache.dir
+/home/michael/Desktop/cam84_development/cam84_updates/CMakeFiles/install.dir

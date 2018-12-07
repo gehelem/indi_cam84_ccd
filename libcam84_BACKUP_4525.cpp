@@ -1,5 +1,10 @@
-// define which ftdi library to use
+// define which ftdi library to use, libftdi or ftd2xx, true or false
 // if LIBFTDI is defined using ifdef LIBFTDI
+<<<<<<< HEAD
+
+=======
+//#define LIBFTDI true
+>>>>>>> a1bfe633605eab6dac0e4e460ab830873446461b
 
 #include <stdio.h>
 #include <stdlib.h>

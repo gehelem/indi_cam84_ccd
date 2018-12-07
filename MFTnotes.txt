@@ -1,0 +1,71 @@
+Notes based on original code to understand operation
+
+post at https://www.cloudynights.com/topic/497530-diy-astro-ccd-16-bit-color-6mpx-camera/page-38#entry7266698
+says read out is 1.5 seconds but my speeds are being limited by USB issues? (30s on one machine 6s on another)
+
+icx453aq is an interline ccd
+
+cooling matters!  Without cooling huge vertical gradient in noise that is independent of exposure time
+
+
+clearframe()
+--->calls shift() 1012 times
+--->clearline2()
+
+cameraStartExposure
+--->shift3()
+--->ftdi_write_data ( CAM8B, FT_Out_Buffer, adress )
+--->pthread_create ( &te, NULL, ExposureTimerTick, NULL );
+------>usleep ( ( durat*1000-52 ) *1000 );  //sleep for exposure duration minus 52 milliseconds
+------>HC595 ( 0xCF );  //on +15V  Turns on 15V3 by applying F7 to Q2
+------>ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+------>readframe ( mBin, 1000 );
+
+--->pthread_create ( &tt, NULL, Timer15VTick, NULL );
+------>usleep ( 1000*1000 ); //Sleep 1 second
+------>HC595 ( 0x4F );  //off +15V  Turns of 15V3 by applying F7 to Q2
+------>ftdi_write_data ( CAM8B, FT_Out_Buffer, adress )
+
+Is issue with long waits between exposures due to not properly clearing CCD at beginning of exposure?
+Are we clearing all rows and columns?  YES 
+
+problem is due to not clearing each line.
+Concerned Vdd is not being turned out at the right time.
+
+======================================================================================================================================================
+
+BDBUS0 bit assignments
+
+ x x x x  x x x x
+ | | | |  | | | |
+ | | | |  | | |  - 0x01   SL_OUT   ->  SL    -> AD9826 SLOAD                                                               ->   AD9826
+ | | | |  | |  --- 0x02   SCK_OUT  ->  SCK   -> AD9826 SCLK   & 74HC595 SCK
+ | | | |  |  ----- 0x04   SDA_OUT  ->  SDA   -> AD9826 SDATA  & 74HC595 SER
+ | | | |   ------- 0x08   WR#2     ->  WR#   -> WR#1                                                                       ->   FT2232 ACBUS3/RXLED#
+ | | | |   
+ | | |  ---------- 0x10   S2_OUT   ->  S2    -> Generates ACK CK1 CK2                                                      ->   AD9826
+ | |  ------------ 0x20   S1_OUT   ->  S1    -> Generates RG2 CK1 CK2                                                      ->   AD9826 & ICX453
+ |  -------------- 0x40   S0_OUT   ->  S0    -> MAX4428 INA INB                   ->   H1 H2   ->                          ->   ICX453--Horizontal shift clock
+  ---------------- 0x80   SL2_OUT  ->  SL2   -> 74HC595 RCK                       ->   F1-F8   ->   CXD1267  ->    V1-V4   ->   ICX453
+  
+  
+======================================================================================================================================================
+HC595 bit assignments
+
+ x x x x  x x x x		7HC595	 CDX1267   										ICX453
+ | | | |  | | | |
+ | | | |  | | |  - 0x01   F0  ->  XV4   -> Vphi4 			-> V4				-> Vphi4
+ | | | |  | |  --- 0x02   F1  ->  XSG2  -> Controls Vphi1
+ | | | |  |  ----- 0x04   F2  ->  XV3   -> Vphi3 			-> V3				-> Vphi3
+ | | | |   ------- 0x08   F3  ->  XSG1  -> Controls Vphi3
+ | | | |   
+ | | |  ---------- 0x10   F4  ->  XV1   ->  Vphi1 			-> V1				-> Vphi1
+ | |  ------------ 0x20   F5  ->  XV2   ->  Vphi2 			-> V2				-> Vphi2
+ |  -------------- 0x40   F6  ->  XSHT  -> SUB (inverted and level shifted)   	->  VSUB
+ |
+ |								BC847B					
+  ---------------- 0x80   F7  ->  Q2  	-> 15V3									->  VDD
+  
+===========
+
+install indilib from latest https://www.indilib.org/download.html
