@@ -15,11 +15,14 @@
 #include <indiccd.h>
 #include <cam84_ccd.h>
 #include <indilogger.h>
+#include <indiccd.h>
 #include <atomic>
 
 //#include <libusb-1.0/libusb.h>
 
 #include <mutex>
+
+
 std::mutex m;
 
 #ifdef LIBFTDI
@@ -149,7 +152,7 @@ int ftdi_read_data_modified ( struct ftdi_context *ftdi, unsigned char *buf,  in
 int ftdi_read_data_modified (FT_HANDLE ftdi, unsigned char *buf,  int size );
 #endif
 
-inline uint16_t  swap ( void * x );
+//inline uint16_t  swap ( void * x );
 
 //int ftStatus = 0;
 //uint32_t   bytesWritten = 0;
@@ -470,7 +473,7 @@ void clearframe()
 void *posExecute ( void *arg )	//Thread assembles data read from AD and places it in the image buffer
 {
     //printf("poseExecute\n");
-    uint16_t x,y,x1,byteCnt,x_int,y_int;
+    uint16_t x,y,x1,y1,byteCnt,x_int,y_int;
     uint32_t bytesRead;
     uint8_t * FT_In_BufferP;
     bool readFailed;
@@ -482,7 +485,7 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
     //canWrite=true;
     readFailed=false;
     byteCnt=0;
-    for ( y= mYn; y < mYn+mdeltY; y ++ )
+    for ( y= 0; y < mdeltY; y ++ )
     {
         if ( mBin == 1 )
         {
@@ -522,46 +525,20 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
                 x1=x+mXn;
 
                 x_int=x1+x1;
-                y_int=y+y;
+                y1 = y + mYn;
+                y_int=y1 + y1;
                 FT_In_BufferP = FT_In_Buffer + 8*x;
-                bufim[x_int][y_int]    =swap(FT_In_BufferP);
-                bufim[x_int][y_int+1]  =swap(FT_In_BufferP + 2 );
+                bufim[x_int][y_int]    = * (uint16_t *) (FT_In_BufferP);
+                bufim[x_int][y_int+1]  = * (uint16_t *) (FT_In_BufferP + 2) ;
                 x_int++;
-                bufim[x_int][y_int+1]  =swap(FT_In_BufferP + 4 );
-                bufim[x_int][y_int]    =swap(FT_In_BufferP + 6 );
+                bufim[x_int][y_int+1]  = * (uint16_t *) (FT_In_BufferP + 4) ;
+                bufim[x_int][y_int]    = * (uint16_t *) (FT_In_BufferP + 6) ;
 
-                /*
-              bufim[2*x1][2*y]    =1*FT_In_Buffer[ ( 4*x ) *2]+256*FT_In_Buffer[ ( 4*x ) *2+1];
-              bufim[2*x1][2*y+1]  =1*FT_In_Buffer[ ( 4*x+1 ) *2]+256*FT_In_Buffer[ ( 4*x+1 ) *2+1];
-              bufim[2*x1+1][2*y+1]=1*FT_In_Buffer[ ( 4*x+2 ) *2]+256*FT_In_Buffer[ ( 4*x+2 ) *2+1];
-              bufim[2*x1+1][2*y]  =1*FT_In_Buffer[ ( 4*x+3 ) *2]+256*FT_In_Buffer[ ( 4*x+3 ) *2+1];
-*/
             }
         }
         else
         {
-            bytesRead=ftdi_read_data_modified ( CAM8A, FT_In_Buffer, 2*mdeltX );
-
-            if (bytesRead < 0 )
-            {
-                fprintf ( stderr,"FT_Read failed (%d)\n",bytesRead );
-            }
-
-            if ( bytesRead!=2*mdeltX )
-            {
-                readFailed=true;
-                fprintf ( stderr,"poseExecute bin<>1 readfailed %d<>%d - %d / %d \n",bytesRead,2*mdeltX,y,mYn+mdeltY-1 );
-                break;
-            }
-            for ( x=0; x < mdeltX ; x ++ )
-            {
-
-                bufim[2*x1][2*y]    =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
-                bufim[2*x1][2*y+1]  =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
-                bufim[2*x1+1][2*y+1]=1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
-                bufim[2*x1+1][2*y]  =1*FT_In_Buffer[2*x]+256*FT_In_Buffer[2*x+1];
-
-            }
+            fprintf(stderr, "ERROR--Binning is not supported in this version of the driver \n");
         }
     }
     /*if (readFailed)
@@ -1144,8 +1121,14 @@ bool cameraIsConnected()               /*stdcall; export;*/
     return isConnected;
 }
 
-int cameraStartExposure ( int Bin,int StartX,int StartY,int NumX,int NumY, double Duration, bool light ) /*stdcall; export;*/
+int cameraStartExposure ( int Bin,int StartX,int StartY,int NumX,int NumY, double Duration, int theFrameType ) /*stdcall; export;*/
 {
+    bool light = false;
+    if(theFrameType == 0)
+    {
+        light = true;
+    }
+
     fprintf ( stderr,"Start exposure bin %d x %d y %d w %d h %d s %f l %d\n",Bin,StartX,StartY,NumX,NumY,Duration,light );
     durat=Duration;
 #ifdef LIBFTDI
@@ -1461,14 +1444,11 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
     return true;
 }
 
-uint16_t  swap ( void * x )  //NO NEED TO SWAP JUST NEED RESIZE OF POINTER
-{
-    uint16_t * xp = (uint16_t *) x;
-    //  uint16_t hibyte =  ( *xp & 0xFF00 ) >> 8;
-    //  uint16_t lobyte = ( *xp & 0x00FF ) << 8;
-    //  uint16_t ret= lobyte | hibyte; // swapped bytes
-    return * xp;
-}
+//uint16_t  swap ( void * x )  //NO NEED TO SWAP JUST NEED RESIZE OF POINTER
+//{
+//    uint16_t * xp = (uint16_t *) x;
+//    return * xp;
+//}
 
 #ifdef LIBFTDI
 int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, int size )

@@ -1,4 +1,5 @@
 /*
+   Developed using
    INDI Developers Manual
    Tutorial #3
 
@@ -317,7 +318,8 @@ bool Cam84CCD::initProperties()
 
 
     // We set the CCD capabilities
-    uint32_t cap = CCD_CAN_ABORT | CCD_CAN_BIN | CCD_CAN_SUBFRAME | CCD_HAS_BAYER;
+    //MFT remove binning for now
+    uint32_t cap = CCD_CAN_ABORT /*| CCD_CAN_BIN */ | CCD_CAN_SUBFRAME | CCD_HAS_BAYER;
     SetCCDCapability(cap);
 
     IUSaveText(&BayerT[2], "GRBG");    
@@ -381,7 +383,7 @@ void Cam84CCD::setupParams()
     // Let's calculate how much memory we need for the primary CCD buffer
     int nbuf;
     nbuf=PrimaryCCD.getXRes()*PrimaryCCD.getYRes() * PrimaryCCD.getBPP()/8;
-    nbuf+=512;                      //  leave a little extra at the end
+    nbuf+=512;                      //  leave a little extra at the end  WHY?
     PrimaryCCD.setFrameBufferSize(nbuf);
 }
 
@@ -397,7 +399,8 @@ bool Cam84CCD::StartExposure(float duration)
     // Since we have only have one CCD with one chip, we set the exposure duration of the primary CCD
     PrimaryCCD.setExposureDuration(duration);
     //cameraStartExposure(1,0,0,3000,2000, duration,true);
-    int r = cameraStartExposure(PrimaryCCD.getBinX(),PrimaryCCD.getSubX(),PrimaryCCD.getSubY(),PrimaryCCD.getSubW(),PrimaryCCD.getSubH(), duration, true);
+    int r = cameraStartExposure(PrimaryCCD.getBinX(),PrimaryCCD.getSubX(),PrimaryCCD.getSubY(),PrimaryCCD.getSubW(),
+                                PrimaryCCD.getSubH(), duration, PrimaryCCD.getFrameType());
     //int r = cameraStartExposure(1,0,0,3000,2000, 0.4, true);
     gettimeofday(&ExpStart,NULL);
 
@@ -517,7 +520,7 @@ void Cam84CCD::TimerHit()
 }
 
 /**************************************************************************************
-** Create a random image and return it to client
+** Get the image and return it to client
 ***************************************************************************************/
 void Cam84CCD::grabImage()
 {
@@ -525,14 +528,11 @@ void Cam84CCD::grabImage()
     uint8_t * image = PrimaryCCD.getFrameBuffer();
     int width = PrimaryCCD.getSubW() / PrimaryCCD.getBinX()   * (PrimaryCCD.getBPP() / 8);
     int height = PrimaryCCD.getSubH() / PrimaryCCD.getBinY();
-    //int width = PrimaryCCD.getSubW() / PrimaryCCD.getBinX() * (PrimaryCCD.getBPP() / 8);
-    //int height = PrimaryCCD.getSubH() / PrimaryCCD.getBinY() * (PrimaryCCD.getBPP() / 8);
-
 
     IDMessage(getDeviceName(), "grabimage width=%d height=%d BPP=%d\n", width/2, height, PrimaryCCD.getBPP() );
 
-   // Fill buffer with random pattern
-   while (!cameraGetImageReady() ) usleep(1000000); // waiting image
+   // Fill buffer with image
+   while (!cameraGetImageReady() ) usleep(100000); // waiting image
    if (PrimaryCCD.getBinX()==1) 
    {
 	   int di = PrimaryCCD.getSubX();
@@ -549,53 +549,13 @@ void Cam84CCD::grabImage()
    } 
    else 
    {
-   for (int j=0; j < height ; j++)
-     for (int i=0; i < width/2; i++)
-         {
-            uint16_t pix = cameraGetImage(2*i,2*j);
-            uint8_t hibyte = (pix & 0xff00) >> 8;
-            uint8_t lobyte = (pix & 0xff);
-            image[2*i+  j*width] = hibyte;
-            image[2*i+1+j*width] = lobyte;
-         };
-   }; 
+       IDMessage(getDeviceName(), "grabimage binning not currently supported, binsize requested is %d x %d\n", PrimaryCCD.getBinX(),PrimaryCCD.getBinY() );
+   };
 
-   /*for (int j=0; j < height ; j++)
-     for (int i=0; i < width; i++)
-         {
-            image[i+  j*width] = cameraGetImage(i,j)/256;
-         };*/
-   //cameraGetImage2(image);
-   //*bufim = (unsigned short *) image;
-   //image = *bufim;
-   //PrimaryCCD.setFrameBuffer(bufim);
-   //cameraGetImage(image);
-     IDMessage(getDeviceName(), "Download complete.");
+   IDMessage(getDeviceName(), "Download complete.");
 
    // Let INDI::CCD know we're done filling the image buffer
    ExposureComplete(&PrimaryCCD);
-}
+};
 
-
-
-/*
-
-int main(void)
-{
-    cameraConnect();
-    cameraSetBaudrate(80);
-    cameraSetOffset(0);
-    cameraSetGain(0);
-    int r = cameraStartExposure(1,0,0,3000,2000, 1, false);
-    while (!cameraGetImageReady())
-//        fprintf(stdout,"wait\n");
-      ; // waiting image
-    //for (int i=0; i < 10 ; i++)
-    //  for (int j=0; j < 10; j++)
-    //      fprintf(stdout,"img %d/%d:%d\n",i,j,cameraGetImage(i,j));
-    cameraDisconnect();
-
-}
-
-*/
 

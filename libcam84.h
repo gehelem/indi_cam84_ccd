@@ -15,10 +15,14 @@
 //extern "C" {
 #endif
 
+//#include <libusb-1.0/libusb.h>
+
+#include <mutex>
+
 bool cameraConnect(void);
 bool cameraDisconnect(void); 
 bool cameraIsConnected(void);
-int  cameraStartExposure(int Bin,int StartX,int StartY,int NumX,int NumY, double Duration, bool light);
+int  cameraStartExposure(int Bin,int StartX,int StartY,int NumX,int NumY, double Duration, int theFrameType);
 bool cameraStopExposure(void);
 int  cameraGetCameraState(void);
 bool cameraGetImageReady(void);
@@ -36,6 +40,7 @@ bool cameraSetContinuousADToggle(bool continuousADToggleValue);
 #endif
 
 #endif
+
 class LibCam84
 {
 public:
