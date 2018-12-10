@@ -107,8 +107,8 @@ int checkCanStopExposureCount;
 //void *posExecute(void *arg);
 //void posExecute(void);
 //???????? ??????-??????????? ??? ????????
-static uint16_t bufim[3000][2000];
-//static unsigned short bufim[CameraWidth][CameraHeight];
+static uint16_t bufim[2000 * 3000];
+//static unsigned short bufim[CameraHeight * CameraWidth];
 //?????? ?????? ? ?????????? ?? ???????
 int mYn,mdeltY;
 //?????? ?????? ? ?????????? ?? ????????
@@ -522,17 +522,21 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
 
             for ( x=0; x < mdeltX; x ++ )
             {
-                x1=x+mXn;
+                //x1=x+mXn;
+                x1=x;
 
                 x_int=x1+x1;
-                y1 = y + mYn;
+
+                //y1 = y + mYn;
+                y1 = y;
+
                 y_int=y1 + y1;
                 FT_In_BufferP = FT_In_Buffer + 8*x;
-                bufim[x_int][y_int]    = * (uint16_t *) (FT_In_BufferP);
-                bufim[x_int][y_int+1]  = * (uint16_t *) (FT_In_BufferP + 2) ;
+                bufim[(y_int  )*mdeltX*2 + x_int]  = * (uint16_t *) (FT_In_BufferP);
+                bufim[(y_int+1)*mdeltX*2 + x_int]  = * (uint16_t *) (FT_In_BufferP + 2) ;
                 x_int++;
-                bufim[x_int][y_int+1]  = * (uint16_t *) (FT_In_BufferP + 4) ;
-                bufim[x_int][y_int]    = * (uint16_t *) (FT_In_BufferP + 6) ;
+                bufim[(y_int+1)*mdeltX*2 + x_int]  = * (uint16_t *) (FT_In_BufferP + 4) ;
+                bufim[(y_int  )*mdeltX*2 + x_int]  = * (uint16_t *) (FT_In_BufferP + 6) ;
 
             }
         }
@@ -1239,6 +1243,7 @@ bool cameraStopExposure()               /*stdcall; export;*/
 }
 
 /*Get camera state, return int result*/
+//NOT IN USE???
 int cameraGetCameraState()           /*stdcall; export;*/
 {
     int Result;
@@ -1261,23 +1266,13 @@ bool cameraGetImageReady()               /*stdcall; export;*/
 
 
 
-uint16_t cameraGetImage ( int i,int j )
+uint8_t * cameraGetImagePointer ()
 {
-    //	fprintf(stderr,"cameraGetImage %d %d\n",i,j);
-    /*  if(i<getImageImin) getImageImin=i;
-  if(i>getImageImax) getImageImax=i;
-  if(j<getImageJmin) getImageJmin=j;
-  if(j>getImageJmax) getImageJmax=j; */
     cameraState=cameraDownload;
     cameraState=cameraIdle;
-    return bufim[i][j];
+    return (uint8_t *) bufim;
 }
 
-void cameraGetImage2 ( void *buff )
-{
-    fprintf(stderr,"cameraGetImage2\n");
-    buff = bufim;
-}
 /*Set camera gain, return bool result*/
 bool cameraSetGain ( int val )                 /*stdcall; export;*/
 {
@@ -1443,12 +1438,6 @@ bool cameraSetLibftdiTimers ( int latA,int latB,int timerA,int timerB )
 #endif
     return true;
 }
-
-//uint16_t  swap ( void * x )  //NO NEED TO SWAP JUST NEED RESIZE OF POINTER
-//{
-//    uint16_t * xp = (uint16_t *) x;
-//    return * xp;
-//}
 
 #ifdef LIBFTDI
 int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, int size )

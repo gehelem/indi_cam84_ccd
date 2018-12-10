@@ -30,8 +30,8 @@ bool cameraSetGain (int val);
 bool cameraSetOffset (int val);
 int  cameraGetError(void);
 bool cameraSetBaudrateDivisor(int val);
-uint16_t cameraGetImage(int i, int j);
-void cameraGetImage2(void *buff);
+uint8_t * cameraGetImagePointer();
+//void cameraGetImage2(void *buff);
 bool cameraSetLibftdiTimers(int latA,int latB,int timerA,int timerB);
 bool cameraSetContinuousADToggle(bool continuousADToggleValue);
 
