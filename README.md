@@ -14,4 +14,4 @@ cmake . -DLIBFTDI=OFF
 libftdi performance has been greatly improved by increasing the ftdi_write_data_set_chunksize back to the default value.
 
 Framing now works
-2x2 binning may not be ready
+binning not currently supported in this branch
