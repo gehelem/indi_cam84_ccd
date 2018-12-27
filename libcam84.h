@@ -2,7 +2,7 @@
 #define __LIBCAM84_H__
 
 #define CAM84_BAUDRATE_DIVISOR  2
-#define CAM84_GAIN      0
+#define CAM84_GAIN      50
 #define CAM84_OFFSET    0
 #define CAM84_LATENCYA  1
 #define CAM84_LATENCYB  1

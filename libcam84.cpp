@@ -118,7 +118,6 @@ uint8_t zatv;
 bool errorReadFlag;
 bool errorWriteFlag;
 //speed
-int spusb;
 int ms1;
 
 //exposure start time
@@ -484,7 +483,7 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
             if ( bytesRead!=8*mdeltX )
             {
                 readFailed=true;
-                fprintf ( stderr,"poseExecute bin==1 readfailed %d<>%d - %d / %d \n",bytesRead,8*mdeltX,y,mYn+mdeltY-1 );
+//                fprintf ( stderr,"poseExecute bin==1 readfailed %d<>%d - %d / %d \n",bytesRead,8*mdeltX,y,mYn+mdeltY-1 );
 
                 //break;
             }
@@ -514,12 +513,12 @@ void *posExecute ( void *arg )	//Thread assembles data read from AD and places i
             fprintf(stderr, "ERROR--Binning is not supported in this version of the driver \n");
         }
     }
-    /*if (readFailed)
+ if (readFailed)
   {
     errorReadFlag = true;
     if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
     if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
-  }*/
+  }
 
     //TODO NEEDED???????????????????
 #ifdef LIBFTDI
@@ -555,7 +554,7 @@ void readframe ( int bin,int expoz )
     //if (~ errorWriteFlag)  ftdi_usb_purge_rx_buffer(CAM8A);
     //if (~ errorWriteFlag)  ftdi_usb_purge_tx_buffer(CAM8B);
 
-    // fprintf ( stderr,"Pre-charging : begin\n" );
+    // fprintf ( stderr,"Pre-charging : begin\n" );2
     // adress=0;
     // preCharge(100000);
     // for ( x=0; x<100; x++) {
@@ -570,41 +569,93 @@ void readframe ( int bin,int expoz )
 
     if ( expoz > 52 )
     {
+        fprintf(stderr,"expoz > 52 expoz = %d\n", expoz);
 
         if ( expoz < 500 )
         {
+            fprintf(stderr,"**Entering expoz < 500\n");
             clearframe();
+            fprintf(stderr,"**clearframe done\n");
             shift3();
+            fprintf(stderr,"**shift3 done\n");
+
+
+#ifdef LIBFTDI
+         if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+#else
+         if ( FT_Write( CAM8B, FT_Out_Buffer, adress, &bytesWritten ) != FT_OK)
+#endif
+            {
+              fprintf ( stderr,"write failed on channel 2)\n" );
+             }
+            adress=0;
+
             for ( y=0; y <= expoz-52; y ++ )
+            {
                 for ( x=0; x <= ms1-1; x ++ )
                 {
                     HC595 ( 0xCF );
                 }
+#ifdef LIBFTDI
+            if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+#else
+            if ( FT_Write( CAM8B, FT_Out_Buffer, adress, &bytesWritten ) != FT_OK)
+#endif
+            {
+                fprintf ( stderr,"write failed on channel 2)\n" );
+            }
+             adress=0;
+
+            }
+//            fprintf(stderr,"**HC595 done\n");
         }
 
         clearframe();
+//        fprintf(stderr,"**final clearframe done\n");
     }
     else
     {
-        //     fprintf(stderr,"ExpozElse\n");
+//        fprintf(stderr,"ExpozElse expoz =  %d\n",expoz);
 
         clearframe();
         shift3();
         if ( expoz > 0 )
+#ifdef LIBFTDI
+         if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+#else
+         if ( FT_Write( CAM8B, FT_Out_Buffer, adress, &bytesWritten ) != FT_OK)
+#endif
+            {
+              fprintf ( stderr,"write failed on channel 2)\n" );
+             }
+            adress=0;
         {
             //        fprintf(stderr,"ExpozElse\n");
             for ( y=0; y <= expoz; y ++ )
+            {
                 for ( x=0; x <= ms1-1; x ++ )
                 {
                     HC595 ( 0xCF );
                 }
+
+#ifdef LIBFTDI
+         if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+#else
+         if ( FT_Write( CAM8B, FT_Out_Buffer, adress, &bytesWritten ) != FT_OK)
+#endif
+            {
+              fprintf ( stderr,"write failed on channel 2)\n" );
+             }
+            adress=0;
+
+            }
         }
     }
 
 
     shift2();
     fprintf(stderr,"1) ftdi_write_data with adress size of %d\n", adress);
-    //  if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
+
 #ifdef LIBFTDI
     if ( ftdi_write_data ( CAM8B, FT_Out_Buffer, adress ) < 0 )
 #else
@@ -681,7 +732,8 @@ void readframe ( int bin,int expoz )
     }
     else
     {
-        for ( x=0; x <= 4; x ++ )
+        fprintf(stderr, "Binning is not supported in this driver at this time.");
+ /*       for ( x=0; x <= 4; x ++ )
         {
             FT_Out_Buffer[adress+0]=0xD9;
             FT_Out_Buffer[adress+1]=0x99;
@@ -720,7 +772,7 @@ void readframe ( int bin,int expoz )
             FT_Out_Buffer[adress+9]=0xE1;			//Toggle WR#1
             adress += 10;
         }
-    }
+*/    }
     FT_Out_Buffer[adress+0]=0xD9;
     FT_Out_Buffer[adress+1]=0x91;					//Toggle WR#1
     FT_Out_Buffer[adress+2]=0xA9;
@@ -1147,7 +1199,7 @@ int cameraStartExposure ( int Bin,int StartX,int StartY,int NumX,int NumY, doubl
     }
     imageReady = false;
     cameraState = cameraExposing;
-    if ( Duration > 0.499 )
+    if ( Duration >= 0.4999 )
     {
         adress=0;
 
@@ -1296,13 +1348,12 @@ bool cameraSetBaudrateDivisor ( int theDivisor )                /*stdcall; expor
 //    if ( ( theBaudRatekbps>=minBaudrate ) & ( theBaudRatekbps<=maxBaudrate ) )
     {
         Result = true;      //valid baud rate requested
-        spusb = theBaudRatekbps*1000;
-        ms1 = spusb / 5000;  //used to generate a millisecond of delay via output clock rate
-                             // represents number of bit bang pulses in 1 millisecond
-                             // Note: Output clock rate for asynchrounous bit bang is 5x the
-                             // requested baud rate (see note regarding libftdi 4x scaling issue
-                             // in setBaudRate code
-        FT_Current_Baud = spusb;
+        FT_Current_Baud = theBaudRatekbps * 1000;
+        ms1 =   theBaudRatekbps * 5;  //used to generate a millisecond of delay via output clock rate
+                                    // represents number of bit bang pulses in 1 millisecond
+                                    // Note: Output clock rate for asynchrounous bit bang is 5x the
+                                    // requested baud rate (see note regarding libftdi 4x scaling issue
+                                    // in setBaudRate code
         fprintf( stderr, " FT_Current_Baud %d   ms1 %d\n", FT_Current_Baud, ms1);
         fprintf( stderr, "***Setting Baud Rate A to %d\n", FT_Current_Baud);
         fprintf( stderr, "***Setting Baud Rate B to %d\n", FT_Current_Baud);
@@ -1419,12 +1470,13 @@ int ftdi_read_data_modified ( struct  ftdi_context * ftdi, unsigned char * buf, 
         rsize = rsize+ftdi_read_data ( ftdi, buf+rsize, nsize );
         nsize = size - rsize;
     }
-    if(retry>=20)
+/*    if(retry>=20)
     {
         fprintf ( stderr,"Read Error: Too many retries stopped at %d \n",retry );
     } else if(retry>0) {
         fprintf ( stderr,"Read: Retries needed: %d \n",retry );
     }
+    */
 
 //    clock_gettime(CLOCK_MONOTONIC, &rdmCurrentTime);
 //    rdmElapsedTime = (rdmCurrentTime.tv_sec - rdmStartTime.tv_sec) + (rdmCurrentTime.tv_nsec - rdmStartTime.tv_nsec)*1.0e-9;
@@ -1462,6 +1514,7 @@ int ftdi_read_data_modified ( FT_HANDLE ftdi, unsigned char * buf, int size )
     } else if(retry>0) {
         fprintf ( stderr,"Read: Retries needed: %d \n",retry );
     }
+
 
 //    clock_gettime(CLOCK_MONOTONIC, &rdmCurrentTime);
 //    rdmElapsedTime = (rdmCurrentTime.tv_sec - rdmStartTime.tv_sec) + (rdmCurrentTime.tv_nsec - rdmStartTime.tv_nsec)*1.0e-9;
